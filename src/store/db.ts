@@ -45,7 +45,10 @@ export interface Change {
 }
 
 export interface Store {
-  commit(change: Change): Promise<void>;
+  // A function is run inside the write queue against the latest committed state,
+  // so concurrent edits never build on a stale read. Throwing rejects with no change;
+  // an empty change is a no-op.
+  commit(change: Change | ((current: Snapshot) => Change)): Promise<void>;
   snapshot(): Snapshot;
   subscribe(fn: () => void): () => void;
   replaceRemote(lists: TaskList[], tasks: Task[]): Promise<void>;
@@ -129,24 +132,27 @@ export async function openStore(name = 'todo'): Promise<Store> {
   let current: Snapshot | null = null;
   const listeners = new Set<() => void>();
 
+  const view = (s: State): Snapshot => ({
+    lists: s.lists,
+    tasks: s.tasks,
+    entries: s.entries,
+    queueLength: s.queued.length,
+    notices: s.notices,
+    ...s.meta,
+  });
+
   function snapshot(): Snapshot {
-    current ??= {
-      lists: state.lists,
-      tasks: state.tasks,
-      entries: state.entries,
-      queueLength: state.queued.length,
-      notices: state.notices,
-      ...state.meta,
-    };
+    current ??= view(state);
     return current;
   }
 
   // Writes run one at a time, each planned from the state the previous one left.
   // Persist first, swap and notify only on success, so a failed write changes nothing.
   let chain: Promise<unknown> = Promise.resolve();
-  function mutate(plan: (s: State, nextSeq: number) => Plan): Promise<void> {
+  function mutate(plan: (s: State, nextSeq: number) => Plan | null): Promise<void> {
     const run = async () => {
       const p = plan(state, lastSeq + 1);
+      if (!p) return;
       const tx = db.transaction(STORES, 'readwrite');
       // Track every request as it is issued: if building the rest throws (an
       // unclonable value), the ones already issued must still be awaited and silenced.
@@ -190,8 +196,9 @@ export async function openStore(name = 'todo'): Promise<Store> {
   const putQueue = (tx: Tx, qs: QueuedOp[]) =>
     qs.map((q) => tx.objectStore('queue').put({ seq: q.seq, op: q.op }));
 
-  function commit(change: Change): Promise<void> {
+  function commit(input: Change | ((current: Snapshot) => Change)): Promise<void> {
     return mutate((s, nextSeq) => {
+      const change = typeof input === 'function' ? input(view(s)) : input;
       const next: Partial<State> = {};
       const putTasks = change.putTasks ?? [];
       const removeTasks = change.removeTasks ?? [];
@@ -213,6 +220,8 @@ export async function openStore(name = 'todo'): Promise<Store> {
       }));
       if (added.length) next.queued = [...s.queued, ...added];
       if (change.meta) next.meta = { ...s.meta, ...change.meta };
+
+      if (Object.keys(next).length === 0) return null;
 
       return {
         next,

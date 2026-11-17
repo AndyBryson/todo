@@ -204,6 +204,42 @@ test('queued ops get increasing seqs even when enqueued together', async () => {
   expect(seqs[1]).toBeGreaterThan(seqs[0] as number);
 });
 
+describe('overlapping edits', () => {
+  test('two edits to different fields both survive, with correct bases', async () => {
+    await Promise.all([
+      editTask(store, 'x', { title: 'New title' }),
+      editTask(store, 'x', { notes: 'New notes' }),
+    ]);
+    expect(store.snapshot().tasks.find((t) => t.id === 'x')).toMatchObject({
+      title: 'New title',
+      notes: 'New notes',
+    });
+    await Promise.all([editTask(store, 'x', { title: 'A' }), editTask(store, 'x', { title: 'B' })]);
+    const patches = (await ops()).slice(2);
+    expect(patches).toMatchObject([
+      { set: { title: 'A' }, base: { title: 'New title' } },
+      { set: { title: 'B' }, base: { title: 'A' } },
+    ]);
+  });
+
+  test('two quick adds get distinct ranks in order', async () => {
+    const [a, b] = await Promise.all([
+      addTask(store, { listId: 'L1', title: 'A', pinned: false }, NOW),
+      addTask(store, { listId: 'L1', title: 'B', pinned: false }, NOW),
+    ]);
+    const { entries } = store.snapshot();
+    expect(entries[b as string]?.rank).toBeGreaterThan(entries[a as string]?.rank ?? 0);
+  });
+
+  test('pinning and completing the same card both apply', async () => {
+    await store.setEntries({ x: entry({ column: 'Doing', openColumn: 'Doing' }) });
+    await Promise.all([setPinned(store, 'x', true, NOW), setCompleted(store, 'x', true, NOW)]);
+    const s = store.snapshot();
+    expect(s.tasks.find((t) => t.id === 'x')?.completed).toBe(true);
+    expect(s.entries.x).toMatchObject({ column: 'Done', openColumn: 'Doing' });
+  });
+});
+
 describe('unknown ids', () => {
   test('every edit throws', async () => {
     await expect(setCompleted(store, 'nope', true, NOW)).rejects.toThrow();
