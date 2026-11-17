@@ -122,12 +122,10 @@ export function App({ store, engine, auth }: Props) {
 
   useEffect(() => () => clearTimeout(errorTimer.current), []);
 
-  // Select mode and the drawer belong to the board; Today never shows them.
+  // Select mode belongs to the board; the drawer closes whenever the page changes.
   useEffect(() => {
-    if (view !== 'board') {
-      setSelecting(false);
-      setDrawerOpen(false);
-    }
+    if (view !== 'board') setSelecting(false);
+    setDrawerOpen(false);
   }, [view]);
 
   useEffect(() => {
@@ -213,6 +211,7 @@ export function App({ store, engine, auth }: Props) {
     onFilters: changeFilters,
     selecting,
     onToggleSelect: toggleSelect,
+    showSelect: view === 'board',
   };
 
   async function signIn() {
@@ -234,21 +233,17 @@ export function App({ store, engine, auth }: Props) {
         route={view}
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
-        menu={
-          view === 'board'
-            ? {
-                filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
-                expanded: phone ? drawerOpen : sidebarOpen,
-                onClick: phone ? () => setDrawerOpen(true) : toggleSidebar,
-              }
-            : undefined
-        }
+        menu={{
+          filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
+          expanded: phone ? drawerOpen : sidebarOpen,
+          onClick: phone ? () => setDrawerOpen(true) : toggleSidebar,
+        }}
       />
-      <div class={view === 'board' && !phone ? 'with-sidebar' : undefined}>
-        {view === 'board' && !phone && sidebarOpen && <Sidebar {...sidebarProps} />}
+      <div class={phone ? undefined : 'with-sidebar'}>
+        {!phone && sidebarOpen && <Sidebar {...sidebarProps} />}
         <main class="main">
           {view === 'today' ? (
-            <Today store={store} snapshot={snapshot} phone={phone} act={act} />
+            <Today store={store} snapshot={snapshot} filters={filters} phone={phone} act={act} />
           ) : (
             <Board
               store={store}
@@ -262,7 +257,7 @@ export function App({ store, engine, auth }: Props) {
           )}
         </main>
       </div>
-      {view === 'board' && phone && (
+      {phone && (
         <SidebarDrawer {...sidebarProps} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       )}
       {phone && (

@@ -1,6 +1,6 @@
 import { listColour } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
-import { DEFAULT_FILTERS } from '../domain/filters';
+import type { BoardFilters } from '../domain/filters';
 import { todaySections } from '../domain/today';
 import type { Task } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
@@ -11,18 +11,19 @@ import { QuickAdd } from './QuickAdd';
 interface Props {
   store: Store;
   snapshot: Snapshot;
+  filters: BoardFilters;
   phone: boolean;
   act(fn: () => Promise<void>): Promise<boolean>;
 }
 
-export function Today({ store, snapshot, phone, act }: Props) {
+export function Today({ store, snapshot, filters, phone, act }: Props) {
   const now = new Date();
   const today = localDate(now);
   const { overdue, dueToday, pinned } = todaySections(
     snapshot.tasks,
     snapshot.entries,
     now,
-    DEFAULT_FILTERS,
+    filters,
   );
   const listTitle = new Map(snapshot.lists.map((l) => [l.id, l.title]));
 
@@ -73,7 +74,11 @@ export function Today({ store, snapshot, phone, act }: Props) {
           }
         />
       )}
-      {sections.length === 0 && <p class="placeholder">Nothing planned and nothing pinned.</p>}
+      {filters.priorities.size === 0 ? (
+        <p class="placeholder">Every priority is hidden by the filter</p>
+      ) : (
+        sections.length === 0 && <p class="placeholder">Nothing planned and nothing pinned.</p>
+      )}
       {sections.map((s) => (
         <section key={s.heading}>
           <h2>{s.heading}</h2>

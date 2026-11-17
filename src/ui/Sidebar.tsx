@@ -10,9 +10,18 @@ interface Props {
   onFilters(next: BoardFilters): void;
   selecting: boolean;
   onToggleSelect(): void;
+  // Multi-select is board-only.
+  showSelect: boolean;
 }
 
-export function Sidebar({ lists, filters, onFilters, selecting, onToggleSelect }: Props) {
+export function Sidebar({
+  lists,
+  filters,
+  onFilters,
+  selecting,
+  onToggleSelect,
+  showSelect,
+}: Props) {
   function toggleList(id: string) {
     onFilters({
       ...filters,
@@ -43,9 +52,11 @@ export function Sidebar({ lists, filters, onFilters, selecting, onToggleSelect }
         ))}
       </ul>
       <FilterMenu filters={filters} onFilters={onFilters} />
-      <button type="button" aria-pressed={selecting} onClick={onToggleSelect}>
-        {selecting ? 'Cancel' : 'Select'}
-      </button>
+      {showSelect && (
+        <button type="button" aria-pressed={selecting} onClick={onToggleSelect}>
+          {selecting ? 'Cancel' : 'Select'}
+        </button>
+      )}
     </aside>
   );
 }
