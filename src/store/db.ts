@@ -34,6 +34,9 @@ export interface Snapshot {
   notices: Notice[];
   lastSyncedAt: string | null;
   lastListId: string | null;
+  // Old temporary ID to real ID, for this session only: an open screen or a late
+  // edit can still hold the temporary ID after a replay has renamed the task.
+  renamed: Record<string, string>;
 }
 
 // One edit's worth of changes. Applied together or not at all.
@@ -52,6 +55,7 @@ export interface Change {
   requeue?: QueuedOp[];
   notices?: string[];
   meta?: Partial<Meta>;
+  renamed?: Record<string, string>;
 }
 
 // Moves a task, its subtasks, its board entry and its queued ops to a new ID.
@@ -63,6 +67,7 @@ export function renameChange(s: Snapshot, fromId: string, toId: string): Change 
     removeTasks: family.some((t) => t.id === fromId) ? [fromId] : [],
     entries: entry ? { [toId]: entry } : undefined,
     removeEntries: entry ? [fromId] : [],
+    renamed: { [fromId]: toId },
     requeue: s.queued
       .filter((q) => q.op.kind !== 'create' && q.op.taskId === fromId)
       .map((q) => ({ seq: q.seq, op: { ...q.op, taskId: toId } as Op })),
@@ -113,6 +118,7 @@ interface State {
   queued: QueuedOp[];
   notices: Notice[];
   meta: Meta;
+  renamed: Record<string, string>;
 }
 
 interface Plan {
@@ -150,6 +156,7 @@ export async function openStore(name = 'todo'): Promise<Store> {
       lastSyncedAt: (await db.get('meta', 'lastSyncedAt')) ?? null,
       lastListId: (await db.get('meta', 'lastListId')) ?? null,
     },
+    renamed: {},
   };
   let lastSeq = state.queued.reduce((max, q) => Math.max(max, q.seq), 0);
 
@@ -165,6 +172,7 @@ export async function openStore(name = 'todo'): Promise<Store> {
     queued: s.queued,
     notices: s.notices,
     ...s.meta,
+    renamed: s.renamed,
   });
 
   function snapshot(): Snapshot {
@@ -258,6 +266,7 @@ export async function openStore(name = 'todo'): Promise<Store> {
       const notices = (change.notices ?? []).map((text) => ({ id: crypto.randomUUID(), text }));
       if (notices.length) next.notices = [...s.notices, ...notices];
       if (change.meta) next.meta = { ...s.meta, ...change.meta };
+      if (change.renamed) next.renamed = { ...s.renamed, ...change.renamed };
 
       if (Object.keys(next).length === 0) return null;
 

@@ -2,6 +2,7 @@ import { buildBoard } from '../domain/board';
 import { COLUMNS } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, moveCard } from '../store/edits';
+import { openDetail } from './CardDetail';
 import { Column, type Drop } from './Column';
 import { QuickAdd } from './QuickAdd';
 
@@ -12,9 +13,7 @@ interface Props {
   act(fn: () => Promise<void>): Promise<boolean>;
 }
 
-const openTask = (id: string) => {
-  location.hash = `#/board/task/${id}`;
-};
+const openTask = (id: string) => openDetail('board', id);
 
 export function Board({ store, snapshot, filter, act }: Props) {
   const now = new Date();

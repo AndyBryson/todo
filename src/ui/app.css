@@ -291,3 +291,97 @@ button {
   border: 1px solid var(--border);
   border-radius: 0.5rem;
 }
+
+.detail {
+  width: min(32rem, 100vw);
+  max-height: 90vh;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.detail::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.detail.phone {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.detail-close {
+  align-self: flex-end;
+  padding: 0.3rem 0.8rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.field input,
+.field textarea,
+.field select,
+.row button {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.row input {
+  flex: 1;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.danger {
+  align-self: flex-start;
+  padding: 0.4rem 0.9rem;
+  color: var(--error);
+  background: none;
+  border: 1px solid var(--error);
+  border-radius: 0.5rem;
+}

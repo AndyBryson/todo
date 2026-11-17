@@ -33,6 +33,19 @@ test('edits to a task still waiting to be created follow it to its real ID', asy
   expect(store.snapshot().tasks.find((t) => t.id === real.id)?.notes).toBe('n');
 });
 
+test('an edit through the old temporary ID reaches the real task after the rename', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
+  expect(await replay(google, store)).toBe('done');
+  const real = [...google.tasks.values()].find((t) => t.title === 'New') ?? task('missing');
+  expect(store.snapshot().renamed[id]).toBe(real.id);
+  await editTask(store, id, { notes: 'late' });
+  await moveCard(store, id, 'Next', null, NOW);
+  expect(store.snapshot().tasks.find((t) => t.id === real.id)?.notes).toBe('late');
+  expect(store.snapshot().entries[real.id]?.column).toBe('Next');
+  expect(await replay(google, store)).toBe('done');
+  expect(google.tasks.get(real.id)?.notes).toBe('late');
+});
+
 test('deleting a task before its create is sent never reaches Google', async () => {
   const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
   await editTask(store, id, { notes: 'n' });

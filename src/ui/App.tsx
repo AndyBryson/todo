@@ -3,6 +3,7 @@ import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
 import type { SyncEngine } from '../sync/engine';
 import { Board } from './Board';
+import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
 import { useSnapshot, useSyncStatus } from './hooks';
 import { ListFilter } from './ListFilter';
@@ -28,7 +29,13 @@ function saveFilter(filter: Set<string> | null) {
   }
 }
 
-const readRoute = () => (location.hash === '#/today' ? 'today' : 'board');
+function readRoute(): { view: DetailView; taskId: string | null } {
+  const [, view, kind, id] = location.hash.split('/');
+  return {
+    view: view === 'today' ? 'today' : 'board',
+    taskId: kind === 'task' && id ? decodeURIComponent(id) : null,
+  };
+}
 
 interface Props {
   store: Store;
@@ -39,7 +46,7 @@ interface Props {
 export function App({ store, engine, auth }: Props) {
   const snapshot = useSnapshot(store);
   const status = useSyncStatus(engine);
-  const [route, setRoute] = useState(readRoute);
+  const [{ view, taskId }, setRoute] = useState(readRoute);
   const [filter, setFilter] = useState(loadFilter);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -60,17 +67,22 @@ export function App({ store, engine, auth }: Props) {
 
   // The one place an edit is paired with a sync request.
   const act = useCallback(
-    async (fn: () => Promise<void>): Promise<boolean> => {
+    async (fn: () => Promise<unknown>): Promise<boolean> => {
       try {
         await fn();
         clearTimeout(errorTimer.current);
         setActionError(null);
-        engine.requestSync();
-        return true;
       } catch (e) {
         showError(e);
         return false;
       }
+      // Apart from the edit, so a failing sync request cannot make a saved edit look failed.
+      try {
+        engine.requestSync();
+      } catch (e) {
+        showError(e);
+      }
+      return true;
     },
     [engine, showError],
   );
@@ -104,18 +116,28 @@ export function App({ store, engine, auth }: Props) {
         queueLength={snapshot.queueLength}
         notices={snapshot.notices}
         actionError={actionError}
-        route={route}
+        route={view}
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
       />
       <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
       <main class="main">
-        {route === 'today' ? (
+        {view === 'today' ? (
           <p class="placeholder">Today view arrives in a later task.</p>
         ) : (
           <Board store={store} snapshot={snapshot} filter={effectiveFilter} act={act} />
         )}
       </main>
+      {taskId && (
+        <CardDetail
+          taskId={taskId}
+          view={view}
+          store={store}
+          snapshot={snapshot}
+          act={act}
+          onClose={() => closeDetail(view)}
+        />
+      )}
     </>
   );
 }

@@ -4,6 +4,17 @@ import type { BoardEntries, BoardEntry, Column, Task } from '../domain/types';
 import type { TaskPatch } from '../google/api';
 import type { Change, Snapshot, Store } from './db';
 
+// An edit may still hold a temporary ID that a replay has since renamed.
+export function resolveId(s: Snapshot, taskId: string): string {
+  let id = taskId;
+  const seen = new Set<string>();
+  for (let next = s.renamed[id]; next !== undefined && !seen.has(id); next = s.renamed[id]) {
+    seen.add(id);
+    id = next;
+  }
+  return id;
+}
+
 function requireTask(s: Snapshot, taskId: string): Task {
   const task = s.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`Unknown task ${taskId}`);
@@ -70,10 +81,11 @@ export async function addTask(
 
 export async function editTask(
   store: Store,
-  taskId: string,
+  requestedId: string,
   input: Pick<TaskPatch, 'title' | 'notes' | 'due'>,
 ): Promise<void> {
   await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
     const task = requireTask(s, taskId);
     const set: TaskPatch = {};
     const base: TaskPatch = {};
@@ -120,21 +132,25 @@ function completionChange(s: Snapshot, task: Task, completed: boolean, now: stri
 
 export async function setCompleted(
   store: Store,
-  taskId: string,
+  requestedId: string,
   completed: boolean,
   now: string,
 ): Promise<void> {
-  await store.commit((s) => completionChange(s, requireTask(s, taskId), completed, now));
+  await store.commit((s) =>
+    completionChange(s, requireTask(s, resolveId(s, requestedId)), completed, now),
+  );
 }
 
 export async function moveCard(
   store: Store,
-  taskId: string,
+  requestedId: string,
   column: Column,
-  insertAfter: string | null,
+  requestedAfter: string | null,
   now: string,
 ): Promise<void> {
   await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
+    const insertAfter = requestedAfter === null ? null : resolveId(s, requestedAfter);
     const task = requireTask(s, taskId);
     const entry = requireEntry(s, taskId);
 
@@ -152,19 +168,25 @@ export async function moveCard(
 
 export async function setPinned(
   store: Store,
-  taskId: string,
+  requestedId: string,
   pinned: boolean,
   now: string,
 ): Promise<void> {
   await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
     requireTask(s, taskId);
     const entry = requireEntry(s, taskId);
     return { entries: { [taskId]: { ...entry, pinned, updatedAt: now } } };
   });
 }
 
-export async function moveToList(store: Store, taskId: string, toListId: string): Promise<void> {
+export async function moveToList(
+  store: Store,
+  requestedId: string,
+  toListId: string,
+): Promise<void> {
   await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
     const task = requireTask(s, taskId);
     if (task.parent !== null) throw new Error('A subtask moves with its parent');
     if (task.listId === toListId) return {};
@@ -177,8 +199,9 @@ export async function moveToList(store: Store, taskId: string, toListId: string)
   });
 }
 
-export async function deleteTask(store: Store, taskId: string): Promise<void> {
+export async function deleteTask(store: Store, requestedId: string): Promise<void> {
   await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
     const task = requireTask(s, taskId);
     const subtasks = s.tasks.filter((t) => t.parent === taskId);
     return {
