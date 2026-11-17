@@ -156,6 +156,12 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
         close();
       }}
     >
+      {/* Pinned so Close stays reachable however far the panel scrolls. */}
+      <header class="detail-head">
+        <button type="button" class="detail-close" onClick={close}>
+          Close
+        </button>
+      </header>
       <div class="detail-body">
         {error && (
           <p class="error" role="alert">
@@ -200,10 +206,6 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
 
   return shell(
     <>
-      <button type="button" class="detail-close" onClick={close}>
-        Close
-      </button>
-
       <DraftField
         label="Title"
         required

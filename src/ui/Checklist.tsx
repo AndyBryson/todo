@@ -18,6 +18,13 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
   const [draft, setDraft] = useState('');
   const draftRef = useRef('');
   const steps = subtasksOf(snapshot.tasks, parent.id);
+  const addInput = useRef<HTMLInputElement>(null);
+
+  // Each new step pushes the add field down; keep it on screen while typing several.
+  useEffect(() => {
+    const el = addInput.current;
+    if (el && document.activeElement === el) el.scrollIntoView({ block: 'nearest' });
+  }, [steps.length]);
   // A step keeps its temporary ID as its key once Google names it, so the row is not
   // remounted mid-edit and focus stays put.
   const originalOf = new Map<string, string>();
@@ -153,6 +160,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
         ))}
       </ul>
       <input
+        ref={addInput}
         type="text"
         class="step-add"
         placeholder="Add a step"
