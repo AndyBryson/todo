@@ -746,6 +746,17 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
+  position: relative;
+}
+
+.menu-dot {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.25rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent, currentColor);
 }
 
 .drawer {

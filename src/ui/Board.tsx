@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
-import type { BoardFilters } from '../domain/filters';
+import { activeFilterCount, type BoardFilters } from '../domain/filters';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
@@ -19,6 +19,7 @@ interface Props {
   selecting: boolean;
   onSelecting(on: boolean): void;
   onOpenDrawer(): void;
+  drawerOpen: boolean;
   // Desktop only: the sidebar is permanent there, so this shows or hides it.
   sidebarOpen: boolean;
   onToggleSidebar(): void;
@@ -46,6 +47,7 @@ export function Board({
   selecting,
   onSelecting,
   onOpenDrawer,
+  drawerOpen,
   sidebarOpen,
   onToggleSidebar,
 }: Props) {
@@ -55,6 +57,14 @@ export function Board({
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; touch: boolean } | null>(
     null,
   );
+  // The sidebar can be out of sight, and counts only cover visible cards, so a
+  // forgotten filter must show on the button that opens it.
+  const filtersOn = (filters.lists ? 1 : 0) + activeFilterCount(filters);
+  const menuLabel =
+    filtersOn > 0
+      ? `Lists and filters, ${filtersOn} ${filtersOn === 1 ? 'filter' : 'filters'} on`
+      : 'Lists and filters';
+  const menuDot = filtersOn > 0 && <span class="menu-dot" aria-hidden="true" />;
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
 
@@ -151,11 +161,11 @@ export function Board({
           <button
             type="button"
             class="menu-button"
-            aria-label="Lists and filters"
+            aria-label={menuLabel}
             aria-expanded={sidebarOpen}
             onClick={onToggleSidebar}
           >
-            ☰
+            ☰{menuDot}
           </button>
         </div>
       )}
@@ -165,10 +175,11 @@ export function Board({
             <button
               type="button"
               class="menu-button"
-              aria-label="Lists and filters"
+              aria-label={menuLabel}
+              aria-expanded={drawerOpen}
               onClick={onOpenDrawer}
             >
-              ☰
+              ☰{menuDot}
             </button>
             <div class="switcher">
               {COLUMNS.map((name) => (

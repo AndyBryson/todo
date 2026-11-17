@@ -250,6 +250,7 @@ export function App({ store, engine, auth }: Props) {
               selecting={selecting}
               onSelecting={setSelecting}
               onOpenDrawer={() => setDrawerOpen(true)}
+              drawerOpen={drawerOpen}
               sidebarOpen={sidebarOpen}
               onToggleSidebar={toggleSidebar}
             />
