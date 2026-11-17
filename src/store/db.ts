@@ -54,6 +54,7 @@ export interface Change {
   // Replaces the op at each seq; a seq also in `dequeue` is dropped instead.
   requeue?: QueuedOp[];
   notices?: string[];
+  removeNotices?: string[];
   meta?: Partial<Meta>;
   renamed?: Record<string, string>;
 }
@@ -81,17 +82,6 @@ export interface Store {
   commit(change: Change | ((current: Snapshot) => Change)): Promise<void>;
   snapshot(): Snapshot;
   subscribe(fn: () => void): () => void;
-  replaceRemote(lists: TaskList[], tasks: Task[]): Promise<void>;
-  putTask(task: Task): Promise<void>;
-  removeTask(taskId: string): Promise<void>;
-  setEntries(entries: BoardEntries): Promise<void>;
-  patchEntries(changes: BoardEntries, removed?: string[]): Promise<void>;
-  enqueue(op: Op): Promise<void>;
-  queue(): Promise<QueuedOp[]>;
-  dequeue(seq: number): Promise<void>;
-  rewriteQueue(fn: (op: Op) => Op | null): Promise<void>;
-  renameTask(fromId: string, toId: string): Promise<void>;
-  addNotice(text: string): Promise<void>;
   dismissNotice(id: string): Promise<void>;
   setMeta(meta: Partial<Pick<Snapshot, 'lastSyncedAt' | 'lastListId'>>): Promise<void>;
 }
@@ -273,7 +263,10 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
         ];
       }
       const notices = (change.notices ?? []).map((text) => ({ id: crypto.randomUUID(), text }));
-      if (notices.length) next.notices = [...s.notices, ...notices];
+      const removeNotices = new Set(change.removeNotices ?? []);
+      if (notices.length || removeNotices.size) {
+        next.notices = [...s.notices.filter((n) => !removeNotices.has(n.id)), ...notices];
+      }
       if (change.meta) next.meta = { ...s.meta, ...change.meta };
       if (change.renamed) next.renamed = { ...s.renamed, ...change.renamed };
 
@@ -310,6 +303,7 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
           ),
           ...[...dequeued].map((seq) => tx.objectStore('queue').delete(seq)),
           ...notices.map((n) => tx.objectStore('notices').put(n)),
+          ...[...removeNotices].map((id) => tx.objectStore('notices').delete(id)),
           ...Object.entries(change.meta ?? {}).map(([k, v]) =>
             tx.objectStore('meta').put(v as string | null, k),
           ),
@@ -328,78 +322,8 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
       };
     },
 
-    replaceRemote(newLists, newTasks) {
-      return mutate(() => ({
-        next: { lists: [...newLists], tasks: [...newTasks] },
-        persist: (tx) => [
-          tx.objectStore('lists').clear(),
-          tx.objectStore('tasks').clear(),
-          ...newLists.map((l) => tx.objectStore('lists').put(l)),
-          ...newTasks.map((t) => tx.objectStore('tasks').put(t)),
-        ],
-      }));
-    },
-
-    putTask(task) {
-      return commit({ putTasks: [task] });
-    },
-
-    removeTask(taskId) {
-      return commit({ removeTasks: [taskId] });
-    },
-
-    setEntries(next) {
-      return mutate(() => ({
-        next: { entries: { ...next } },
-        persist: (tx) => [
-          tx.objectStore('entries').clear(),
-          ...Object.entries(next).map(([id, e]) => tx.objectStore('entries').put(e, id)),
-        ],
-      }));
-    },
-
-    patchEntries(changes, removed = []) {
-      return commit({ entries: changes, removeEntries: removed });
-    },
-
-    enqueue(op) {
-      return commit({ enqueue: [op] });
-    },
-
-    async queue() {
-      return [...state.queued];
-    },
-
-    dequeue(seq) {
-      return commit({ dequeue: [seq] });
-    },
-
-    rewriteQueue(fn) {
-      return commit((s) => {
-        const dequeue: number[] = [];
-        const requeue: QueuedOp[] = [];
-        for (const q of s.queued) {
-          const op = fn(q.op);
-          if (!op) dequeue.push(q.seq);
-          else if (op !== q.op) requeue.push({ seq: q.seq, op });
-        }
-        return { dequeue, requeue };
-      });
-    },
-
-    renameTask(fromId, toId) {
-      return commit((s) => renameChange(s, fromId, toId));
-    },
-
-    addNotice(text) {
-      return commit({ notices: [text] });
-    },
-
     dismissNotice(id) {
-      return mutate((s) => ({
-        next: { notices: s.notices.filter((n) => n.id !== id) },
-        persist: (tx) => [tx.objectStore('notices').delete(id)],
-      }));
+      return commit({ removeNotices: [id] });
     },
 
     setMeta(patch) {

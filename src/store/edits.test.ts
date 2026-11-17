@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { entry, task } from '../domain/test-fixtures';
-import { openStore, type Store } from './db';
+import { openStore, renameChange, type Store } from './db';
 import {
   addTask,
   deleteTask,
   editTask,
   moveCard,
+  moveCardToBottom,
   moveToList,
   setCompleted,
   setPinned,
@@ -19,19 +20,23 @@ let name: string;
 beforeEach(async () => {
   name = `test-${crypto.randomUUID()}`;
   store = await openStore(name);
-  await store.replaceRemote(
-    [
-      { id: 'L1', title: 'One' },
-      { id: 'L2', title: 'Two' },
-    ],
-    [task('x')],
-  );
+  await store.commit({
+    replaceRemote: {
+      lists: [
+        { id: 'L1', title: 'One' },
+        { id: 'L2', title: 'Two' },
+      ],
+      tasks: [task('x')],
+    },
+  });
 });
 
-const ops = async () => (await store.queue()).map((q) => q.op);
+const ops = async () => store.snapshot().queued.map((q) => q.op);
 
 test('dragging to Done completes the task in Google and clears the pin', async () => {
-  await store.setEntries({ x: entry({ column: 'Doing', openColumn: 'Doing', pinned: true }) });
+  await store.commit({
+    replaceEntries: { x: entry({ column: 'Doing', openColumn: 'Doing', pinned: true }) },
+  });
   await moveCard(store, 'x', 'Done', null, NOW);
   const s = store.snapshot();
   expect(s.entries.x).toMatchObject({ column: 'Done', openColumn: 'Doing', pinned: false });
@@ -47,8 +52,8 @@ test('dragging to Done completes the task in Google and clears the pin', async (
 });
 
 test('dragging out of Done reopens the task in Google', async () => {
-  await store.putTask(task('x', { completed: true, completedAt: OLD_DONE }));
-  await store.setEntries({ x: entry({ column: 'Done', openColumn: 'Next' }) });
+  await store.commit({ putTasks: [task('x', { completed: true, completedAt: OLD_DONE })] });
+  await store.commit({ replaceEntries: { x: entry({ column: 'Done', openColumn: 'Next' }) } });
   await moveCard(store, 'x', 'Waiting', null, NOW);
   const s = store.snapshot();
   expect(s.entries.x).toMatchObject({ column: 'Waiting', openColumn: 'Waiting' });
@@ -65,10 +70,12 @@ test('dragging out of Done reopens the task in Google', async () => {
 });
 
 test('moving between open columns places the card and queues nothing', async () => {
-  await store.putTask(task('a'));
-  await store.setEntries({
-    x: entry({ column: 'Next', openColumn: 'Next', rank: 1024 }),
-    a: entry({ column: 'Doing', openColumn: 'Doing', rank: 1024 }),
+  await store.commit({ putTasks: [task('a')] });
+  await store.commit({
+    replaceEntries: {
+      x: entry({ column: 'Next', openColumn: 'Next', rank: 1024 }),
+      a: entry({ column: 'Doing', openColumn: 'Doing', rank: 1024 }),
+    },
   });
   await moveCard(store, 'x', 'Doing', 'a', NOW);
   const { entries } = store.snapshot();
@@ -78,7 +85,7 @@ test('moving between open columns places the card and queues nothing', async () 
 });
 
 test('quick add from Today pins it and puts it at the bottom of Backlog in the chosen list', async () => {
-  await store.setEntries({ x: entry({ rank: 5000 }) });
+  await store.commit({ replaceEntries: { x: entry({ rank: 5000 }) } });
   const id = await addTask(store, { listId: 'L2', title: '  Buy milk ', pinned: true }, NOW);
   const s = store.snapshot();
   expect(s.tasks.find((t) => t.id === id)?.title).toBe('Buy milk');
@@ -98,7 +105,7 @@ test('blank quick add is refused', async () => {
 });
 
 test('an edit records the previous values as the patch base', async () => {
-  await store.putTask(task('x', { title: 'Old', due: '2026-11-20' }));
+  await store.commit({ putTasks: [task('x', { title: 'Old', due: '2026-11-20' })] });
   await editTask(store, 'x', { title: 'New', due: null });
   expect(await ops()).toEqual([
     {
@@ -112,7 +119,7 @@ test('an edit records the previous values as the patch base', async () => {
 });
 
 test('moving to another list takes subtasks along and queues the old list', async () => {
-  await store.putTask(task('sub', { parent: 'x' }));
+  await store.commit({ putTasks: [task('sub', { parent: 'x' })] });
   await moveToList(store, 'x', 'L2');
   const s = store.snapshot();
   expect(
@@ -125,8 +132,8 @@ test('moving to another list takes subtasks along and queues the old list', asyn
 });
 
 test('deleting removes the task, subtasks and card and queues one delete', async () => {
-  await store.putTask(task('sub', { parent: 'x' }));
-  await store.setEntries({ x: entry() });
+  await store.commit({ putTasks: [task('sub', { parent: 'x' })] });
+  await store.commit({ replaceEntries: { x: entry() } });
   await deleteTask(store, 'x');
   const s = store.snapshot();
   expect(s.tasks).toEqual([]);
@@ -142,7 +149,7 @@ test('editing ignores undefined keys, refuses a blank title and queues nothing w
 });
 
 test('completing a subtask patches the task and has no card to move', async () => {
-  await store.putTask(task('sub', { parent: 'x' }));
+  await store.commit({ putTasks: [task('sub', { parent: 'x' })] });
   await setCompleted(store, 'sub', true, NOW);
   const s = store.snapshot();
   expect(s.tasks.find((t) => t.id === 'sub')).toMatchObject({ completed: true, completedAt: NOW });
@@ -159,20 +166,20 @@ test('completing a subtask patches the task and has no card to move', async () =
 });
 
 test('completing an already completed task queues nothing', async () => {
-  await store.putTask(task('x', { completed: true, completedAt: OLD_DONE }));
+  await store.commit({ putTasks: [task('x', { completed: true, completedAt: OLD_DONE })] });
   await setCompleted(store, 'x', true, NOW);
   expect(await ops()).toEqual([]);
 });
 
 test('pinning updates the card and queues nothing', async () => {
-  await store.setEntries({ x: entry() });
+  await store.commit({ replaceEntries: { x: entry() } });
   await setPinned(store, 'x', true, NOW);
   expect(store.snapshot().entries.x).toMatchObject({ pinned: true, updatedAt: NOW });
   expect(await ops()).toEqual([]);
 });
 
 test('a subtask cannot move list on its own', async () => {
-  await store.putTask(task('sub', { parent: 'x' }));
+  await store.commit({ putTasks: [task('sub', { parent: 'x' })] });
   await expect(moveToList(store, 'sub', 'L2')).rejects.toThrow();
 });
 
@@ -197,11 +204,91 @@ test('a failed write changes nothing, in memory or on disk', async () => {
 
 test('queued ops get increasing seqs even when enqueued together', async () => {
   await Promise.all([
-    store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'a' }),
-    store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'b' }),
+    store.commit({ enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'a' }] }),
+    store.commit({ enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'b' }] }),
   ]);
-  const seqs = (await store.queue()).map((q) => q.seq);
+  const seqs = store.snapshot().queued.map((q) => q.seq);
   expect(seqs[1]).toBeGreaterThan(seqs[0] as number);
+});
+
+describe('editing with nothing changed queues nothing', () => {
+  test.each([
+    ['a title equal after trimming', { title: '  x  ' }],
+    ['equal notes', { notes: '' }],
+    ['a due date staying empty', { due: null }],
+  ])('%s', async (_, input) => {
+    await editTask(store, 'x', input);
+    expect(await ops()).toEqual([]);
+  });
+});
+
+describe('moving a card to the bottom of a column', () => {
+  test('lands after the highest-ranked card', async () => {
+    await store.commit({
+      putTasks: [task('a'), task('b')],
+      replaceEntries: {
+        x: entry({ column: 'Next', openColumn: 'Next' }),
+        a: entry({ column: 'Doing', openColumn: 'Doing', rank: 3072 }),
+        b: entry({ column: 'Doing', openColumn: 'Doing', rank: 1024 }),
+      },
+    });
+    await moveCardToBottom(store, 'x', 'Doing', NOW);
+    const { entries } = store.snapshot();
+    expect(entries.x).toMatchObject({ column: 'Doing', updatedAt: NOW });
+    expect(entries.x?.rank).toBeGreaterThan(entries.a?.rank ?? Number.POSITIVE_INFINITY);
+  });
+
+  test('a card already at the bottom stays there', async () => {
+    await store.commit({
+      putTasks: [task('a')],
+      replaceEntries: {
+        x: entry({ column: 'Doing', openColumn: 'Doing', rank: 9000 }),
+        a: entry({ column: 'Doing', openColumn: 'Doing', rank: 1024 }),
+      },
+    });
+    await moveCardToBottom(store, 'x', 'Doing', NOW);
+    const { entries } = store.snapshot();
+    expect(entries.x?.rank).toBeGreaterThan(entries.a?.rank ?? Number.POSITIVE_INFINITY);
+  });
+
+  test('an empty column takes the card', async () => {
+    await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
+    await moveCardToBottom(store, 'x', 'Waiting', NOW);
+    expect(store.snapshot().entries.x).toMatchObject({ column: 'Waiting', openColumn: 'Waiting' });
+  });
+
+  test('from Done, reopens the task and places it in one write', async () => {
+    await store.commit({
+      putTasks: [task('x', { completed: true, completedAt: OLD_DONE }), task('a')],
+      replaceEntries: {
+        x: entry({ column: 'Done', openColumn: 'Waiting' }),
+        a: entry({ column: 'Next', openColumn: 'Next', rank: 5000 }),
+      },
+    });
+    let writes = 0;
+    store.subscribe(() => writes++);
+    await moveCardToBottom(store, 'x', 'Next', NOW);
+    const s = store.snapshot();
+    expect(writes).toBe(1);
+    expect(s.entries.x).toMatchObject({ column: 'Next', openColumn: 'Next' });
+    expect(s.entries.x?.rank).toBeGreaterThan(5000);
+    expect(await ops()).toEqual([
+      {
+        kind: 'patch',
+        listId: 'L1',
+        taskId: 'x',
+        set: { completed: false },
+        base: { completed: true },
+      },
+    ]);
+  });
+
+  test('follows a temporary ID that has since been renamed', async () => {
+    await store.commit({ replaceEntries: { x: entry() } });
+    await store.commit((s) => renameChange(s, 'x', 'real'));
+    await moveCardToBottom(store, 'x', 'Next', NOW);
+    expect(store.snapshot().entries.real?.column).toBe('Next');
+  });
 });
 
 describe('overlapping edits', () => {
@@ -232,7 +319,7 @@ describe('overlapping edits', () => {
   });
 
   test('pinning and completing the same card both apply', async () => {
-    await store.setEntries({ x: entry({ column: 'Doing', openColumn: 'Doing' }) });
+    await store.commit({ replaceEntries: { x: entry({ column: 'Doing', openColumn: 'Doing' }) } });
     await Promise.all([setPinned(store, 'x', true, NOW), setCompleted(store, 'x', true, NOW)]);
     const s = store.snapshot();
     expect(s.tasks.find((t) => t.id === 'x')?.completed).toBe(true);
@@ -253,9 +340,9 @@ describe('unknown ids', () => {
 
 describe('store', () => {
   test('survives a reopen', async () => {
-    await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
-    await store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'x' });
-    await store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'y' });
+    await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
+    await store.commit({ enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'x' }] });
+    await store.commit({ enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'y' }] });
     await store.setMeta({ lastListId: 'L2' });
 
     const reopened = await openStore(name);
@@ -264,7 +351,7 @@ describe('store', () => {
     expect(s.entries.x?.column).toBe('Next');
     expect(s.lastListId).toBe('L2');
     expect(s.queueLength).toBe(2);
-    const queued = await reopened.queue();
+    const queued = reopened.snapshot().queued;
     expect(queued.map((q) => q.seq)).toEqual([...queued.map((q) => q.seq)].sort((a, b) => a - b));
     expect(queued.map((q) => q.op)).toEqual([
       { kind: 'delete', listId: 'L1', taskId: 'x' },
@@ -277,16 +364,25 @@ describe('store', () => {
     expect(store.snapshot()).toBe(before);
     let calls = 0;
     store.subscribe(() => calls++);
-    await store.addNotice('hello');
+    await store.commit({ notices: ['hello'] });
     expect(store.snapshot()).not.toBe(before);
     expect(store.snapshot().tasks).toBe(before.tasks);
     expect(calls).toBe(1);
   });
 
+  test('a dismissed notice stays dismissed after a reopen', async () => {
+    await store.commit({ notices: ['one', 'two'] });
+    const [first] = store.snapshot().notices;
+    await store.dismissNotice(first?.id ?? '');
+    expect(store.snapshot().notices.map((n) => n.text)).toEqual(['two']);
+    const reopened = await openStore(name);
+    expect(reopened.snapshot().notices.map((n) => n.text)).toEqual(['two']);
+  });
+
   test('renaming a task moves its entry and queued ops', async () => {
-    await store.setEntries({ x: entry() });
-    await store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'x' });
-    await store.renameTask('x', 'real');
+    await store.commit({ replaceEntries: { x: entry() } });
+    await store.commit({ enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'x' }] });
+    await store.commit((s) => renameChange(s, 'x', 'real'));
     const s = store.snapshot();
     expect(s.tasks.map((t) => t.id)).toEqual(['real']);
     expect(Object.keys(s.entries)).toEqual(['real']);

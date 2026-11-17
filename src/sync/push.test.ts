@@ -17,7 +17,7 @@ let google: FakeGoogle;
 beforeEach(async () => {
   store = await openStore(`test-${crypto.randomUUID()}`);
   const tasks = ['x', 'y', 'z'].map((id) => task(id));
-  await store.replaceRemote(LISTS, tasks);
+  await store.commit({ replaceRemote: { lists: LISTS, tasks: tasks } });
   google = createFakeGoogle({ lists: LISTS, tasks });
 });
 
@@ -52,7 +52,7 @@ test('deleting a task before its create is sent never reaches Google', async () 
   await deleteTask(store, id);
   expect(await replay(google, store)).toBe('done');
   expect(google.calls).toEqual([]);
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
 });
 
 test('an edit to a task deleted elsewhere is dropped with a notice', async () => {
@@ -60,7 +60,7 @@ test('an edit to a task deleted elsewhere is dropped with a notice', async () =>
   await editTask(store, 'x', { notes: 'later' });
   google.tasks.delete('x');
   expect(await replay(google, store)).toBe('done');
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
   expect(store.snapshot().tasks.map((t) => t.id)).not.toContain('x');
   expect(store.snapshot().notices).toHaveLength(1);
   expect(store.snapshot().notices[0]?.text).toBe(
@@ -95,14 +95,17 @@ test('token expiry mid-replay stops and keeps the rest in order', async () => {
   await editTask(store, 'z', { title: 'three' });
   google.failOn('getTask', new AuthError(), { after: 1 });
   expect(await replay(google, store)).toBe('auth');
-  expect((await store.queue()).map((q) => (q.op as { taskId: string }).taskId)).toEqual(['y', 'z']);
+  expect(store.snapshot().queued.map((q) => (q.op as { taskId: string }).taskId)).toEqual([
+    'y',
+    'z',
+  ]);
 });
 
 test('going offline leaves the op at the head and changes nothing locally', async () => {
   await editTask(store, 'x', { title: 'one' });
   google.failOn('getTask', new OfflineError());
   expect(await replay(google, store)).toBe('offline');
-  expect(await store.queue()).toHaveLength(1);
+  expect(store.snapshot().queued).toHaveLength(1);
   expect(store.snapshot().notices).toEqual([]);
 });
 
@@ -124,7 +127,7 @@ test('deleting a task that is already gone counts as done', async () => {
 });
 
 test('moving a task to another list is sent and the board card stays', async () => {
-  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
   await moveToList(store, 'x', 'L2');
   expect(await replay(google, store)).toBe('done');
   expect(google.tasks.get('x')?.listId).toBe('L2');
@@ -152,7 +155,7 @@ test('an edit made while the create is in flight targets the real ID', async () 
   expect(await replay(google, store)).toBe('done');
   const real = [...google.tasks.values()].find((t) => t.title === 'New');
   expect(real?.notes).toBe('late');
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
 });
 
 test('a lone create replaces the local copy with Google’s task', async () => {
@@ -168,7 +171,7 @@ test('a lone create replaces the local copy with Google’s task', async () => {
 test('a create for a list that no longer exists is dropped with a notice', async () => {
   const id = await addTask(store, { listId: 'L9', title: 'Orphan', pinned: false }, NOW);
   expect(await replay(google, store)).toBe('done');
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
   expect(store.snapshot().tasks.find((t) => t.id === id)).toBeUndefined();
   expect(store.snapshot().entries[id]).toBeUndefined();
   expect(store.snapshot().notices[0]?.text).toBe(
@@ -177,7 +180,7 @@ test('a create for a list that no longer exists is dropped with a notice', async
 });
 
 test('a move whose response was lost is settled, not reported as a deletion', async () => {
-  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
   await moveToList(store, 'x', 'L2');
   google.tasks.set('x', task('x', { listId: 'L2' }));
   expect(await replay(google, store)).toBe('done');
@@ -188,12 +191,12 @@ test('a move whose response was lost is settled, not reported as a deletion', as
 });
 
 test('a move to a deleted list is dropped and the task goes back to its old list', async () => {
-  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
   await moveToList(store, 'x', 'L2');
   google.lists.splice(1, 1);
   expect(await replay(google, store)).toBe('done');
   const s = store.snapshot();
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
   expect(s.tasks.find((t) => t.id === 'x')?.listId).toBe('L1');
   expect(s.entries.x?.column).toBe('Next');
   expect(s.notices[0]?.text).toBe("“x” couldn't be moved because the list no longer exists.");
@@ -204,7 +207,7 @@ test('a permanent 4xx drops the op with a notice and replay carries on', async (
   await editTask(store, 'y', { title: 'Other' });
   google.failOn('patchTask', new HttpError(400, 'bad'), { times: 1 });
   expect(await replay(google, store)).toBe('done');
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
   expect(store.snapshot().notices.map((n) => n.text)).toEqual([
     'Google refused a change to “Renamed” (error 400), so it was dropped.',
   ]);
@@ -217,7 +220,7 @@ test.each([500, 403, 408, 429])(
     await editTask(store, 'x', { title: 'Renamed' });
     google.failOn('patchTask', new HttpError(status, 'later'));
     expect(await replay(google, store)).toBe('error');
-    expect(await store.queue()).toHaveLength(1);
+    expect(store.snapshot().queued).toHaveLength(1);
     expect(store.snapshot().notices).toEqual([]);
   },
 );

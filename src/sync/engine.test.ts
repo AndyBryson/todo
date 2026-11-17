@@ -16,7 +16,7 @@ let engine: SyncEngine;
 beforeEach(async () => {
   store = await openStore(`test-${crypto.randomUUID()}`);
   const tasks = [task('x')];
-  await store.replaceRemote(LISTS, tasks);
+  await store.commit({ replaceRemote: { lists: LISTS, tasks: tasks } });
   google = createFakeGoogle({ lists: LISTS, tasks });
   engine = createSyncEngine(google, store, () => NOW);
 });
@@ -33,7 +33,7 @@ test('expired sign-in shows as sign-in needed and keeps the queue', async () => 
   google.failOn('getTask', new AuthError());
   await engine.syncNow();
   expect(engine.status()).toEqual({ kind: 'signin' });
-  expect(await store.queue()).toHaveLength(1);
+  expect(store.snapshot().queued).toHaveLength(1);
 });
 
 test('pull waits until the queue is empty so it cannot overwrite local edits', async () => {
@@ -76,7 +76,7 @@ test('an edit made mid-pull is sent and pulled on the follow-up pass', async () 
   };
   await engine.syncNow();
   expect(google.tasks.get('x')?.title).toBe('Mine');
-  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
   expect(engine.status().kind).toBe('synced');
 });
 

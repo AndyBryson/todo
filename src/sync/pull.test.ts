@@ -25,8 +25,8 @@ beforeEach(async () => {
 test('a pull that fails partway writes nothing and prunes nothing', async () => {
   const tasks = [task('a'), task('b', { listId: 'L2' })];
   google = createFakeGoogle({ lists: LISTS, tasks, board: file({ a: entry(), b: entry() }) });
-  await store.replaceRemote(LISTS, tasks);
-  await store.setEntries({ a: entry(), b: entry(), gone: entry() });
+  await store.commit({ replaceRemote: { lists: LISTS, tasks } });
+  await store.commit({ replaceEntries: { a: entry(), b: entry(), gone: entry() } });
   const before = store.snapshot();
   const versionBefore = google.board.version;
 
@@ -53,14 +53,16 @@ test('another device’s newer move survives a merge with our older entry', asyn
     tasks: [task('a')],
     board: file({ a: entry({ column: 'Doing', openColumn: 'Doing', updatedAt: LATER }) }),
   });
-  await store.setEntries({ a: entry({ column: 'Next', openColumn: 'Next' }) });
+  await store.commit({ replaceEntries: { a: entry({ column: 'Next', openColumn: 'Next' }) } });
   await pull(google, store, NOW);
   expect(store.snapshot().entries.a?.column).toBe('Doing');
 });
 
 test('our newer move wins over an older remote entry and is written to Drive', async () => {
   google = createFakeGoogle({ lists: LISTS, tasks: [task('a')], board: file({ a: entry() }) });
-  await store.setEntries({ a: entry({ column: 'Next', openColumn: 'Next', updatedAt: LATER }) });
+  await store.commit({
+    replaceEntries: { a: entry({ column: 'Next', openColumn: 'Next', updatedAt: LATER }) },
+  });
   await pull(google, store, NOW);
   expect(parseBoardFile(google.board.raw).a?.column).toBe('Next');
 });
@@ -71,9 +73,11 @@ test('losing the write race re-reads and keeps both devices’ changes', async (
     tasks: [task('a'), task('b', { position: '1' })],
     board: file({ a: entry(), b: entry({ rank: 2048 }) }),
   });
-  await store.setEntries({
-    a: entry({ column: 'Next', openColumn: 'Next', updatedAt: LATER }),
-    b: entry({ rank: 2048 }),
+  await store.commit({
+    replaceEntries: {
+      a: entry({ column: 'Next', openColumn: 'Next', updatedAt: LATER }),
+      b: entry({ rank: 2048 }),
+    },
   });
   google.onAfter('readBoard', () => {
     // The fake closes over its board object, so mutate it rather than replace it.
@@ -96,7 +100,7 @@ test('an edit arriving during the fetch is kept and nothing is overwritten', asy
     tasks: [task('x')],
     board: file({ x: entry() }),
   });
-  await store.replaceRemote(LISTS, [task('x')]);
+  await store.commit({ replaceRemote: { lists: LISTS, tasks: [task('x')] } });
   let tempId = '';
   google.onAfter('listTasks', () => {
     void (async () => {
@@ -125,7 +129,7 @@ test('an edit arriving during the fetch is kept and nothing is overwritten', asy
 
 test('an edit arriving during board sync stops the write, keeping local-only tasks', async () => {
   google = createFakeGoogle({ lists: LISTS, tasks: [task('x')], board: file({ x: entry() }) });
-  await store.replaceRemote(LISTS, [task('x')]);
+  await store.commit({ replaceRemote: { lists: LISTS, tasks: [task('x')] } });
   let tempId = '';
   google.onAfter('readBoard', () => {
     void addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW.toISOString()).then(
@@ -162,7 +166,7 @@ test('the same entries in a different key order are not rewritten to Drive', asy
     tasks: [task('a'), task('b', { position: '1' })],
     board: file({ a: entry(), b: entry({ rank: 2048 }) }),
   });
-  await store.setEntries({ b: entry({ rank: 2048 }), a: entry() });
+  await store.commit({ replaceEntries: { b: entry({ rank: 2048 }), a: entry() } });
   await pull(google, store, NOW);
   expect(google.calls.some((c) => c.method === 'writeBoard')).toBe(false);
 });
