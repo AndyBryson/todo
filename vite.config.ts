@@ -32,8 +32,8 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/todo/index.html',
-        // Sign-in redirects and Google calls must always reach the network.
-        navigateFallbackDenylist: [/^\/todo\/oauth/, /accounts\.google\.com/, /googleapis\.com/],
+        // Google URLs are cross-origin so never match; this reserves a same-origin sign-in callback.
+        navigateFallbackDenylist: [/^\/todo\/oauth/],
         // The offline copy is the IndexedDB mirror, so no runtime caching of API responses.
         runtimeCaching: [],
       },

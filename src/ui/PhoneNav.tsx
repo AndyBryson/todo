@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { TaskList } from '../domain/types';
 import { QuickAdd } from './QuickAdd';
 
@@ -11,6 +11,16 @@ interface Props {
 
 export function PhoneNav({ route, lists, defaultListId, onAdd }: Props) {
   const [adding, setAdding] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: closing on route change is the point
+  useEffect(() => setAdding(false), [route]);
+
+  useEffect(() => {
+    if (!adding) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setAdding(false);
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [adding]);
 
   return (
     <>
