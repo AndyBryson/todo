@@ -52,7 +52,7 @@ async function main() {
   }
   engine = createSyncEngine(google, store);
   engine.start();
-  render(<App store={store} engine={engine} auth={auth} />, root);
+  render(<App store={store} engine={engine} auth={auth} google={google} />, root);
 }
 
 // Older browsers lack the Web Locks API; running unguarded beats not running.

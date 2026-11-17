@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { activeFilterCount, type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
+import { type GoogleApi, OfflineError } from '../google/api';
 import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
 import { addTask } from '../store/edits';
 import type { SyncEngine } from '../sync/engine';
+import { createList, deleteList, renameList } from '../sync/lists';
 import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
@@ -98,9 +100,11 @@ interface Props {
   store: Store;
   engine: SyncEngine;
   auth: Auth;
+  // Only for list changes, which go straight to Google rather than through the queue.
+  google: GoogleApi;
 }
 
-export function App({ store, engine, auth }: Props) {
+export function App({ store, engine, auth, google }: Props) {
   const snapshot = useSnapshot(store);
   const status = useSyncStatus(engine);
   const phone = useIsPhone();
@@ -205,8 +209,47 @@ export function App({ store, engine, auth }: Props) {
     setSelecting(!selecting);
   }
 
+  // Plain words rather than an HTTP status: list changes need Google to answer now.
+  const listChange = (what: string, fn: () => Promise<unknown>) =>
+    act(async () => {
+      try {
+        await fn();
+      } catch (e) {
+        throw new Error(
+          e instanceof OfflineError
+            ? `Couldn't ${what}: you're offline.`
+            : `Couldn't ${what}. Try again in a moment.`,
+        );
+      }
+    });
+
   const sidebarProps = {
     lists: snapshot.lists,
+    tasks: snapshot.tasks,
+    defaultListId: snapshot.defaultListId,
+    onCreateList: (title: string) =>
+      listChange('create the list', async () => {
+        const list = await createList(google, store, title);
+        // A list someone has just made should show, even with others unticked.
+        if (filter) {
+          const next = new Set(filter).add(list.id);
+          setFilter(next);
+          saveFilter(next);
+        }
+      }),
+    onRenameList: (id: string, title: string) =>
+      listChange('rename the list', () => renameList(google, store, id, title)),
+    onDeleteList: (id: string) =>
+      listChange('delete the list', async () => {
+        await deleteList(google, store, id);
+        if (filter?.has(id)) {
+          const next = new Set(filter);
+          next.delete(id);
+          const kept = next.size > 0 ? next : null;
+          setFilter(kept);
+          saveFilter(kept);
+        }
+      }),
     filters,
     onFilters: changeFilters,
     selecting,

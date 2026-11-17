@@ -1,27 +1,126 @@
-import { useEffect, useRef } from 'preact/hooks';
-import { listColour } from '../domain/board';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { listColour, openTaskCount } from '../domain/board';
 import { type BoardFilters, toggleListFilter } from '../domain/filters';
-import type { TaskList } from '../domain/types';
+import type { Task, TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
+import { ListMenu } from './ListMenu';
 
 interface Props {
   lists: TaskList[];
+  tasks: Task[];
+  defaultListId: string | null;
   filters: BoardFilters;
   onFilters(next: BoardFilters): void;
   selecting: boolean;
   onToggleSelect(): void;
   // Multi-select is board-only.
   showSelect: boolean;
+  onCreateList(title: string): Promise<boolean>;
+  onRenameList(id: string, title: string): Promise<boolean>;
+  onDeleteList(id: string): Promise<boolean>;
 }
+
+function useOnline(): boolean {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    addEventListener('online', update);
+    addEventListener('offline', update);
+    return () => {
+      removeEventListener('online', update);
+      removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
+
+// Enter or leaving the field saves; Escape cancels (null).
+function NameInput({
+  initial,
+  label,
+  onDone,
+}: {
+  initial: string;
+  label: string;
+  onDone(value: string | null): void;
+}) {
+  const done = useRef(false);
+  const finish = (value: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(value);
+  };
+  return (
+    <input
+      type="text"
+      class="list-name"
+      aria-label={label}
+      value={initial}
+      ref={(el) => {
+        if (el && !done.current && document.activeElement !== el) {
+          el.focus();
+          el.select();
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish(e.currentTarget.value);
+        } else if (e.key === 'Escape') {
+          // Inside the drawer, Escape would otherwise close the whole dialog.
+          e.preventDefault();
+          e.stopPropagation();
+          finish(null);
+        }
+      }}
+      onBlur={(e) => finish(e.currentTarget.value)}
+    />
+  );
+}
+
+const tasksPhrase = (n: number) => (n === 1 ? '1 task' : `${n} tasks`);
 
 export function Sidebar({
   lists,
+  tasks,
+  defaultListId,
   filters,
   onFilters,
   selecting,
   onToggleSelect,
   showSelect,
+  onCreateList,
+  onRenameList,
+  onDeleteList,
 }: Props) {
+  const online = useOnline();
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const offline = online ? undefined : "You're offline";
+
+  function openMenu(id: string, x: number, y: number) {
+    if (online) setMenu({ id, x, y });
+  }
+
+  function rename(list: TaskList, value: string | null) {
+    setRenaming(null);
+    const name = value?.trim();
+    if (name && name !== list.title) void onRenameList(list.id, name);
+  }
+
+  function remove(list: TaskList) {
+    const n = openTaskCount(tasks, list.id);
+    if (!confirm(`Delete “${list.title}” and its ${tasksPhrase(n)}? This can't be undone.`)) return;
+    void onDeleteList(list.id);
+  }
+
+  function create(value: string | null) {
+    setAdding(false);
+    const name = value?.trim();
+    if (name) void onCreateList(name);
+  }
+
   function toggleList(id: string) {
     onFilters({
       ...filters,
@@ -38,18 +137,72 @@ export function Sidebar({
       <h2>Lists</h2>
       <ul class="sidebar-lists">
         {lists.map((list) => (
-          <li key={list.id}>
-            <label class="check" style={{ '--chip': listColour(list.id) }}>
-              <input
-                type="checkbox"
-                checked={filters.lists?.has(list.id) ?? true}
-                onChange={() => toggleList(list.id)}
+          <li
+            key={list.id}
+            style={{ '--chip': listColour(list.id) }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              openMenu(list.id, e.clientX, e.clientY);
+            }}
+          >
+            {renaming === list.id ? (
+              <NameInput
+                initial={list.title}
+                label={`New name for ${list.title}`}
+                onDone={(value) => rename(list, value)}
               />
-              <span class="dot" />
-              {list.title}
-            </label>
+            ) : (
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={filters.lists?.has(list.id) ?? true}
+                  onChange={() => toggleList(list.id)}
+                />
+                <span class="dot" />
+                {list.title}
+              </label>
+            )}
+            <button
+              type="button"
+              class="list-actions"
+              aria-label={`Actions for ${list.title}`}
+              aria-haspopup="menu"
+              disabled={!online}
+              title={offline}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                openMenu(list.id, r.left, r.bottom + 4);
+              }}
+            >
+              ⋯
+            </button>
+            {menu?.id === list.id && (
+              <ListMenu
+                x={menu.x}
+                y={menu.y}
+                canDelete={list.id !== defaultListId}
+                onRename={() => setRenaming(list.id)}
+                onDelete={() => remove(list)}
+                onClose={() => setMenu(null)}
+              />
+            )}
           </li>
         ))}
+        <li>
+          {adding ? (
+            <NameInput initial="" label="New list name" onDone={create} />
+          ) : (
+            <button
+              type="button"
+              class="new-list"
+              disabled={!online}
+              title={offline}
+              onClick={() => setAdding(true)}
+            >
+              + New list
+            </button>
+          )}
+        </li>
       </ul>
       <FilterMenu filters={filters} onFilters={onFilters} />
       {showSelect && (
