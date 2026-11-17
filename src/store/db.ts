@@ -127,8 +127,17 @@ interface Plan {
   seq?: number;
 }
 
-export async function openStore(name = 'todo'): Promise<Store> {
+// onClosed runs when another window holds or needs the database, so this window
+// must stop using it rather than hang an upgrade.
+export async function openStore(name = 'todo', onClosed?: () => void): Promise<Store> {
   const db: Db = await openDB<Schema>(name, 1, {
+    blocked() {
+      onClosed?.();
+    },
+    blocking() {
+      db.close();
+      onClosed?.();
+    },
     upgrade(d) {
       d.createObjectStore('lists', { keyPath: 'id' });
       d.createObjectStore('tasks', { keyPath: 'id' });

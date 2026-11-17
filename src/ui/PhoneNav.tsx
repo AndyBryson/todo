@@ -12,7 +12,7 @@ interface Props {
 export function PhoneNav({ route, lists, defaultListId, onAdd }: Props) {
   const [adding, setAdding] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: closing on route change is the point
+  // Leaving a view closes the add sheet.
   useEffect(() => setAdding(false), [route]);
 
   useEffect(() => {
