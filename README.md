@@ -77,3 +77,7 @@ Every push runs the checks in GitHub Actions; a push to `main` also deploys to G
 `CLAUDE.md` has the project rules (testing policy, comments, dependencies, definition of done). The designs behind the app and each feature are in `docs/superpowers/specs/`.
 
 Built with TypeScript, Preact, Vite, SortableJS, idb, Vitest and Biome.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
