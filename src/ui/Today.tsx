@@ -11,10 +11,11 @@ import { QuickAdd } from './QuickAdd';
 interface Props {
   store: Store;
   snapshot: Snapshot;
+  phone: boolean;
   act(fn: () => Promise<void>): Promise<boolean>;
 }
 
-export function Today({ store, snapshot, act }: Props) {
+export function Today({ store, snapshot, phone, act }: Props) {
   const now = new Date();
   const today = localDate(now);
   const { overdue, dueToday, pinned } = todaySections(snapshot.tasks, snapshot.entries, now);
@@ -32,7 +33,12 @@ export function Today({ store, snapshot, act }: Props) {
         type="checkbox"
         aria-label={`Complete “${t.title}”`}
         checked={false}
-        onChange={() => void act(() => setCompleted(store, t.id, true, new Date().toISOString()))}
+        onChange={(e) => {
+          const box = e.currentTarget;
+          void act(() => setCompleted(store, t.id, true, new Date().toISOString())).then((ok) => {
+            if (!ok) box.checked = false;
+          });
+        }}
       />
       <button type="button" class="today-title" onClick={() => openDetail('today', t.id)}>
         {t.title}
@@ -53,16 +59,18 @@ export function Today({ store, snapshot, act }: Props) {
 
   return (
     <div class="today">
-      <QuickAdd
-        lists={snapshot.lists}
-        defaultListId={snapshot.lastListId}
-        pinned={true}
-        onAdd={(input) =>
-          act(async () => {
-            await addTask(store, input, new Date().toISOString());
-          })
-        }
-      />
+      {!phone && (
+        <QuickAdd
+          lists={snapshot.lists}
+          defaultListId={snapshot.lastListId}
+          pinned={true}
+          onAdd={(input) =>
+            act(async () => {
+              await addTask(store, input, new Date().toISOString());
+            })
+          }
+        />
+      )}
       {sections.length === 0 && <p class="placeholder">Nothing due and nothing pinned.</p>}
       {sections.map((s) => (
         <section key={s.heading}>

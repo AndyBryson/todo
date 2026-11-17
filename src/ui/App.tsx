@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
+import { addTask } from '../store/edits';
 import type { SyncEngine } from '../sync/engine';
 import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
-import { useSnapshot, useSyncStatus } from './hooks';
+import { useIsPhone, useSnapshot, useSyncStatus } from './hooks';
 import { ListFilter } from './ListFilter';
+import { PhoneNav } from './PhoneNav';
 import { Today } from './Today';
 
 const FILTER_KEY = 'todo.filter';
@@ -47,6 +49,7 @@ interface Props {
 export function App({ store, engine, auth }: Props) {
   const snapshot = useSnapshot(store);
   const status = useSyncStatus(engine);
+  const phone = useIsPhone();
   const [{ view, taskId }, setRoute] = useState(readRoute);
   const [filter, setFilter] = useState(loadFilter);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -121,14 +124,34 @@ export function App({ store, engine, auth }: Props) {
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
       />
-      <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
+      {view === 'board' && (
+        <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
+      )}
       <main class="main">
         {view === 'today' ? (
-          <Today store={store} snapshot={snapshot} act={act} />
+          <Today store={store} snapshot={snapshot} phone={phone} act={act} />
         ) : (
-          <Board store={store} snapshot={snapshot} filter={effectiveFilter} act={act} />
+          <Board
+            store={store}
+            snapshot={snapshot}
+            filter={effectiveFilter}
+            phone={phone}
+            act={act}
+          />
         )}
       </main>
+      {phone && (
+        <PhoneNav
+          route={view}
+          lists={snapshot.lists}
+          defaultListId={snapshot.lastListId}
+          onAdd={(input) =>
+            act(async () => {
+              await addTask(store, input, new Date().toISOString());
+            })
+          }
+        />
+      )}
       {taskId && (
         <CardDetail
           key={taskId}
