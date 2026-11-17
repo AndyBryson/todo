@@ -248,7 +248,8 @@ describe('moving a card to the bottom of a column', () => {
     });
     await moveCardToBottom(store, 'x', 'Doing', NOW);
     const { entries } = store.snapshot();
-    expect(entries.x?.rank).toBeGreaterThan(entries.a?.rank ?? Number.POSITIVE_INFINITY);
+    expect(entries.x?.rank).toBe(9000);
+    expect(entries.a?.rank).toBe(1024);
   });
 
   test('an empty column takes the card', async () => {

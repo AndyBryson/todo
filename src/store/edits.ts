@@ -188,6 +188,9 @@ export async function moveCardToBottom(
       .filter(([id, e]) => id !== taskId && e.column === column)
       .sort(([, a], [, b]) => a.rank - b.rank)
       .at(-1);
+    // Already the bottom card: re-ranking would only bump updatedAt and win a board merge for nothing.
+    const entry = s.entries[taskId];
+    if (entry?.column === column && (!last || last[1].rank < entry.rank)) return {};
     return moveChange(s, taskId, column, last?.[0] ?? null, now);
   });
 }

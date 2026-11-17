@@ -236,7 +236,7 @@ async function resolveMissingMove(
   }
   const stayed = await find(op.listId);
   if (!stayed) {
-    await store.commit((s) => dropDeleted(s, op.taskId, ''));
+    await store.commit((s) => dropDeleted(s, op.taskId));
     return;
   }
   await store.commit((s) => {

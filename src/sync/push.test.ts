@@ -250,3 +250,16 @@ test('edits to a subtask follow it back when its parent’s move to a deleted li
     "“x” couldn't be moved because the list no longer exists.",
   ]);
 });
+
+test('a move of a task deleted elsewhere drops it with a notice naming it', async () => {
+  await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
+  await moveToList(store, 'x', 'L2');
+  google.tasks.delete('x');
+  expect(await replay(google, store)).toBe('done');
+  const s = store.snapshot();
+  expect(s.tasks.find((t) => t.id === 'x')).toBeUndefined();
+  expect(s.entries.x).toBeUndefined();
+  expect(s.notices.map((n) => n.text)).toEqual([
+    '“x” was deleted elsewhere, so your change was dropped.',
+  ]);
+});
