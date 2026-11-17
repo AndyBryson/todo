@@ -38,8 +38,12 @@ export interface Snapshot {
 
 // One edit's worth of changes. Applied together or not at all.
 export interface Change {
+  // Replace the whole Google mirror (lists and tasks); put/remove below apply on top.
+  replaceRemote?: { lists: TaskList[]; tasks: Task[] };
   putTasks?: Task[];
   removeTasks?: string[];
+  // Replaces every entry; `entries` and `removeEntries` apply on top.
+  replaceEntries?: BoardEntries;
   entries?: BoardEntries;
   removeEntries?: string[];
   enqueue?: Op[];
@@ -224,15 +228,16 @@ export async function openStore(name = 'todo'): Promise<Store> {
       const next: Partial<State> = {};
       const putTasks = change.putTasks ?? [];
       const removeTasks = change.removeTasks ?? [];
-      if (putTasks.length || removeTasks.length) {
-        const byId = new Map(s.tasks.map((t) => [t.id, t]));
+      if (change.replaceRemote) next.lists = [...change.replaceRemote.lists];
+      if (change.replaceRemote || putTasks.length || removeTasks.length) {
+        const byId = new Map((change.replaceRemote?.tasks ?? s.tasks).map((t) => [t.id, t]));
         for (const id of removeTasks) byId.delete(id);
         for (const t of putTasks) byId.set(t.id, t);
         next.tasks = [...byId.values()];
       }
       const removeEntries = change.removeEntries ?? [];
-      if (change.entries || removeEntries.length) {
-        const board = { ...s.entries, ...change.entries };
+      if (change.replaceEntries || change.entries || removeEntries.length) {
+        const board = { ...(change.replaceEntries ?? s.entries), ...change.entries };
         for (const id of removeEntries) delete board[id];
         next.entries = board;
       }
@@ -260,6 +265,20 @@ export async function openStore(name = 'todo'): Promise<Store> {
         next,
         seq: added.length ? nextSeq + added.length - 1 : undefined,
         persist: (tx) => [
+          ...(change.replaceRemote
+            ? [
+                tx.objectStore('lists').clear(),
+                tx.objectStore('tasks').clear(),
+                ...change.replaceRemote.lists.map((l) => tx.objectStore('lists').put(l)),
+              ]
+            : []),
+          ...(change.replaceEntries ? [tx.objectStore('entries').clear()] : []),
+          ...(change.replaceRemote?.tasks ?? []).map((t) => tx.objectStore('tasks').put(t)),
+          ...(change.replaceEntries
+            ? Object.entries(change.replaceEntries).map(([id, e]) =>
+                tx.objectStore('entries').put(e, id),
+              )
+            : []),
           ...putTasks.map((t) => tx.objectStore('tasks').put(t)),
           ...removeTasks.map((id) => tx.objectStore('tasks').delete(id)),
           ...Object.entries(change.entries ?? {}).map(([id, e]) =>
