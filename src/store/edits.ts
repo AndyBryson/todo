@@ -1,4 +1,5 @@
 import { completeEntry, placeInColumn, ranksIn, reopenEntry } from '../domain/board';
+import { priorityOf } from '../domain/priority';
 import { appendRank } from '../domain/rank';
 import { renumber, subtasksOf } from '../domain/subtasks';
 import {
@@ -6,6 +7,7 @@ import {
   type BoardEntry,
   COLUMNS,
   type Column,
+  type Priority,
   type Task,
 } from '../domain/types';
 import type { TaskPatch } from '../google/api';
@@ -270,6 +272,25 @@ export async function setPinned(
     requireTask(s, taskId);
     const entry = requireEntry(s, taskId);
     return { entries: { [taskId]: { ...entry, pinned, updatedAt: now } } };
+  });
+}
+
+export async function setPriority(
+  store: Store,
+  requestedId: string,
+  priority: Priority,
+  now: string,
+): Promise<void> {
+  await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
+    requireTask(s, taskId);
+    const entry = requireEntry(s, taskId);
+    if (priorityOf(entry) === priority) return {};
+    // Medium is stored as no field, so the key is dropped rather than set.
+    const { priority: _old, ...rest } = entry;
+    const next: BoardEntry =
+      priority === 'medium' ? { ...rest, updatedAt: now } : { ...rest, priority, updatedAt: now };
+    return { entries: { [taskId]: next } };
   });
 }
 

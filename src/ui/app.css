@@ -7,6 +7,8 @@
   --accent: #2455d6;
   --accent-text: #ffffff;
   --error: #b3261e;
+  --priority-high: #c62828;
+  --priority-low: #1565c0;
   --notice: #fff4d6;
   --bar-h: 3.2rem;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -24,6 +26,8 @@
     --accent: #7ea2ff;
     --accent-text: #101010;
     --error: #ff8a80;
+    --priority-high: #ff8a80;
+    --priority-low: #8ab4ff;
     --notice: #3a3320;
   }
 }
@@ -571,6 +575,19 @@ button {
   width: 100%;
   margin-top: 0.5rem;
   box-sizing: border-box;
+}
+
+.priority {
+  font-weight: 700;
+  letter-spacing: -0.1em;
+}
+
+.priority-high {
+  color: var(--priority-high);
+}
+
+.priority-low {
+  color: var(--priority-low);
 }
 
 .steps-count {

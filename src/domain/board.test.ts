@@ -6,12 +6,12 @@ import {
   mergeEntries,
   parseBoardFile,
   placeInColumn,
-  priorityOf,
   reconcile,
   reopenEntry,
   serialiseBoard,
 } from './board';
 import { DEFAULT_FILTERS } from './filters';
+import { priorityOf } from './priority';
 import { entry, OLD, task } from './test-fixtures';
 import type { BoardEntries, Column, Priority, TaskList } from './types';
 

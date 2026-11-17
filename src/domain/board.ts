@@ -29,10 +29,6 @@ function isStoredPriority(value: unknown): value is NonNullable<BoardEntry['prio
   return value !== 'medium' && PRIORITIES.includes(value as Priority);
 }
 
-export function priorityOf(entry: BoardEntry): Priority {
-  return entry.priority ?? 'medium';
-}
-
 function parseEntry(value: unknown): BoardEntry | null {
   if (typeof value !== 'object' || value === null) return null;
   const e = value as Record<string, unknown>;

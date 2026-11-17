@@ -1,5 +1,5 @@
-import { priorityOf } from './board';
 import { addDays } from './dates';
+import { priorityOf } from './priority';
 import type { BoardEntry, LocalDate, Priority, Task } from './types';
 import { PRIORITIES } from './types';
 

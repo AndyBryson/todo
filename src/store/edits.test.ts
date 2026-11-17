@@ -14,6 +14,7 @@ import {
   reorderSubtask,
   setCompleted,
   setPinned,
+  setPriority,
 } from './edits';
 
 const NOW = '2026-11-17T10:00:00Z';
@@ -180,6 +181,35 @@ test('pinning updates the card and queues nothing', async () => {
   await setPinned(store, 'x', true, NOW);
   expect(store.snapshot().entries.x).toMatchObject({ pinned: true, updatedAt: NOW });
   expect(await ops()).toEqual([]);
+});
+
+test('setting a priority saves it on the card and queues nothing for Google', async () => {
+  await store.commit({ replaceEntries: { x: entry() } });
+  await setPriority(store, 'x', 'highest', NOW);
+  expect(store.snapshot().entries.x).toMatchObject({ priority: 'highest', updatedAt: NOW });
+  expect(await ops()).toEqual([]);
+});
+
+test('setting Medium removes the stored priority', async () => {
+  await store.commit({ replaceEntries: { x: entry({ priority: 'low' }) } });
+  await setPriority(store, 'x', 'medium', NOW);
+  const saved = store.snapshot().entries.x;
+  expect(saved).toBeDefined();
+  expect(saved).not.toHaveProperty('priority');
+  expect(saved?.updatedAt).toBe(NOW);
+});
+
+test('setting the same priority again saves nothing', async () => {
+  await store.commit({ replaceEntries: { x: entry({ priority: 'high' }) } });
+  const before = store.snapshot();
+  await setPriority(store, 'x', 'high', NOW);
+  await setPriority(store, 'x', 'high', NOW);
+  expect(store.snapshot()).toBe(before);
+});
+
+test('a task with no card cannot be given a priority', async () => {
+  await expect(setPriority(store, 'x', 'high', NOW)).rejects.toThrow();
+  await expect(setPriority(store, 'nope', 'high', NOW)).rejects.toThrow();
 });
 
 test('a subtask cannot move list on its own', async () => {

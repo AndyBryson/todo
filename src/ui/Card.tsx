@@ -1,5 +1,13 @@
 import type { Card as CardData } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
+import { priorityOf } from '../domain/priority';
+
+const MARKERS = {
+  highest: { glyph: '▲▲', label: 'Priority: Highest', tone: 'high' },
+  high: { glyph: '▲', label: 'Priority: High', tone: 'high' },
+  low: { glyph: '▼', label: 'Priority: Low', tone: 'low' },
+  lowest: { glyph: '▼▼', label: 'Priority: Lowest', tone: 'low' },
+} as const;
 
 interface Props {
   card: CardData;
@@ -13,6 +21,8 @@ interface Props {
 
 export function Card({ card, now, onOpen, selecting, selected, onToggle }: Props) {
   const { task, list, entry, colour } = card;
+  const priority = priorityOf(entry);
+  const marker = priority === 'medium' ? null : MARKERS[priority];
   const overdue = task.due !== null && !task.completed && task.due < localDate(now);
   return (
     <li class={selected ? 'card selected' : 'card'} data-id={task.id}>
@@ -39,6 +49,11 @@ export function Card({ card, now, onOpen, selecting, selected, onToggle }: Props
             <time class={overdue ? 'due overdue' : 'due'} dateTime={task.due}>
               {formatDue(task.due)}
             </time>
+          )}
+          {marker && (
+            <span class={`priority priority-${marker.tone}`} role="img" aria-label={marker.label}>
+              {marker.glyph}
+            </span>
           )}
           {card.steps && (
             <span

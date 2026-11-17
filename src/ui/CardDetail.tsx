@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
-import { COLUMNS, type Column } from '../domain/types';
+import { priorityOf } from '../domain/priority';
+import { COLUMNS, type Column, PRIORITIES, type Priority } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import {
   deleteTask,
@@ -9,6 +10,7 @@ import {
   moveToList,
   setCompleted,
   setPinned,
+  setPriority,
 } from '../store/edits';
 import { Checklist } from './Checklist';
 import { useIsPhone } from './hooks';
@@ -273,6 +275,25 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
             {COLUMNS.map((c) => (
               <option key={c} value={c}>
                 {c}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {entry && task.parent === null && (
+        <label class="field">
+          <span>Priority</span>
+          <select
+            value={priorityOf(entry)}
+            onChange={(e) => {
+              const priority = e.currentTarget.value as Priority;
+              void act(() => setPriority(store, task.id, priority, new Date().toISOString()));
+            }}
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {p.charAt(0).toUpperCase() + p.slice(1)}
               </option>
             ))}
           </select>
