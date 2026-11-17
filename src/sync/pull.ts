@@ -19,6 +19,9 @@ export type PullResult = 'written' | 'skipped';
 // replays the queue and pulls again.
 export async function pull(google: GoogleApi, store: Store, now: Date): Promise<PullResult> {
   const completedSince = new Date(now.getTime() - DONE_WINDOW_MS).toISOString();
+  // List changes go straight to Google, not through the queue, so the queue check
+  // below can't see them; a changed lists array means this fetch is out of date.
+  const listsBefore = store.snapshot().lists;
   const lists = await google.listTaskLists();
   const defaultListId = await google.getDefaultListId();
   const tasks: Task[] = [];
@@ -37,7 +40,7 @@ export async function pull(google: GoogleApi, store: Store, now: Date): Promise<
 
   let written = false;
   await store.commit((current) => {
-    if (current.queued.length > 0) return {};
+    if (current.queued.length > 0 || current.lists !== listsBefore) return {};
     written = true;
     // Only entries for tasks that still exist; newest wins so a card moved
     // while the board synced keeps its move (the next cycle writes it to Drive).

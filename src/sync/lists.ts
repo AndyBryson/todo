@@ -6,6 +6,9 @@ import type { Store } from '../store/db';
 // queue: queued tasks could otherwise point at a list Google hasn't made yet.
 
 export class BlankNameError extends Error {}
+// Google moves a task between lists only when the queue replays; until then it
+// still has the task in the old list, so deleting either list would delete it.
+export class PendingMoveError extends Error {}
 
 function cleanName(title: string): string {
   const name = title.trim();
@@ -37,6 +40,12 @@ export async function renameList(
 // Google deletes the list's tasks with it, so the mirror drops them, their
 // entries and any writes still waiting for them in one go.
 export async function deleteList(google: GoogleApi, store: Store, listId: string): Promise<void> {
+  const moving = store
+    .snapshot()
+    .queued.some(
+      ({ op }) => op.kind === 'move' && (op.listId === listId || op.toListId === listId),
+    );
+  if (moving) throw new PendingMoveError('A move into or out of this list is still waiting');
   await google.deleteTaskList(listId);
   await store.commit((s) => {
     const gone = s.tasks.filter((t) => t.listId === listId).map((t) => t.id);
@@ -44,9 +53,7 @@ export async function deleteList(google: GoogleApi, store: Store, listId: string
       removeLists: [listId],
       removeTasks: gone,
       removeEntries: gone.filter((id) => id in s.entries),
-      dequeue: s.queued
-        .filter((q) => q.op.listId === listId || (q.op.kind === 'move' && q.op.toListId === listId))
-        .map((q) => q.seq),
+      dequeue: s.queued.filter((q) => q.op.listId === listId).map((q) => q.seq),
       ...(s.lastListId === listId ? { meta: { lastListId: null } } : {}),
     };
   });

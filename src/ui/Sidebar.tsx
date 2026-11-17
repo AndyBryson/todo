@@ -44,6 +44,9 @@ function NameInput({
   label: string;
   onDone(value: string | null): void;
 }) {
+  // Held here, not read from the field: a sync re-renders the sidebar while typing,
+  // and a value bound to `initial` would put the old name back.
+  const [draft, setDraft] = useState(initial);
   const done = useRef(false);
   const finish = (value: string | null) => {
     if (done.current) return;
@@ -55,7 +58,8 @@ function NameInput({
       type="text"
       class="list-name"
       aria-label={label}
-      value={initial}
+      value={draft}
+      onInput={(e) => setDraft(e.currentTarget.value)}
       ref={(el) => {
         if (el && !done.current && document.activeElement !== el) {
           el.focus();

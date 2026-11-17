@@ -3,7 +3,9 @@ import { entry, task } from '../domain/test-fixtures';
 import { HttpError } from '../google/api';
 import { createFakeGoogle, type FakeGoogle } from '../google/fake';
 import { openStore, type Store } from '../store/db';
-import { BlankNameError, createList, deleteList, renameList } from './lists';
+import { moveToList } from '../store/edits';
+import { BlankNameError, createList, deleteList, PendingMoveError, renameList } from './lists';
+import { pull } from './pull';
 
 const LISTS = [
   { id: 'L1', title: 'My Tasks' },
@@ -67,11 +69,11 @@ test('deleteList keeps queued writes for other lists', async () => {
   await store.commit({
     enqueue: [
       { kind: 'patch', listId: 'L1', taskId: 'a', set: { title: 'A' }, base: { title: 'a' } },
-      { kind: 'move', listId: 'L1', taskId: 'a', toListId: 'L2' },
+      { kind: 'patch', listId: 'L2', taskId: 'p', set: { title: 'P' }, base: { title: 'p' } },
     ],
   });
   await deleteList(google, store, 'L2');
-  expect(store.snapshot().queued.map((q) => q.op.kind)).toEqual(['patch']);
+  expect(store.snapshot().queued.map((q) => q.op.listId)).toEqual(['L1']);
 });
 
 test('deleteList forgets the remembered Quick add list', async () => {
@@ -93,4 +95,32 @@ test('a failed delete leaves the store as it was', async () => {
   expect(after.lists).toEqual(before.lists);
   expect(after.tasks).toEqual(before.tasks);
   expect(after.entries).toEqual(before.entries);
+});
+
+test('a list with a move out of it still waiting is not deleted', async () => {
+  // Google still has the moved task in the list, so deleting now would delete it too.
+  await moveToList(store, 'q', 'L1');
+  const before = store.snapshot();
+  await expect(deleteList(google, store, 'L2')).rejects.toBeInstanceOf(PendingMoveError);
+  expect(google.calls.filter((c) => c.method === 'deleteTaskList')).toEqual([]);
+  expect(store.snapshot().tasks).toEqual(before.tasks);
+  expect(store.snapshot().queued).toEqual(before.queued);
+});
+
+test('a list with a move into it still waiting is not deleted', async () => {
+  await moveToList(store, 'a', 'L2');
+  await expect(deleteList(google, store, 'L2')).rejects.toBeInstanceOf(PendingMoveError);
+  expect(google.lists.map((l) => l.id)).toEqual(['L1', 'L2']);
+});
+
+test('a pull that fetched before a list change does not undo it', async () => {
+  google.onAfter('listTaskLists', () => {
+    void createList(google, store, 'Garden');
+  });
+  // Lets the create land between the pull's fetch and its write.
+  google.onAfter('listTasks', () => {});
+  const result = await pull(google, store, new Date('2026-11-17T10:00:00Z'));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(result).toBe('skipped');
+  expect(store.snapshot().lists.map((l) => l.title)).toContain('Garden');
 });

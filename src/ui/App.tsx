@@ -6,7 +6,7 @@ import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
 import { addTask } from '../store/edits';
 import type { SyncEngine } from '../sync/engine';
-import { createList, deleteList, renameList } from '../sync/lists';
+import { createList, deleteList, PendingMoveError, renameList } from '../sync/lists';
 import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
@@ -218,7 +218,9 @@ export function App({ store, engine, auth, google }: Props) {
         throw new Error(
           e instanceof OfflineError
             ? `Couldn't ${what}: you're offline.`
-            : `Couldn't ${what}. Try again in a moment.`,
+            : e instanceof PendingMoveError
+              ? `Couldn't ${what}: wait for your changes to sync, then try again.`
+              : `Couldn't ${what}. Try again in a moment.`,
         );
       }
     });
