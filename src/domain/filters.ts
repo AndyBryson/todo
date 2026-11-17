@@ -15,14 +15,23 @@ export const DEFAULT_FILTERS: BoardFilters = {
   planned: { on: false, days: 14 },
 };
 
+// The part of the filters that applies on Today as well as the board.
+export function listAndPriorityVisible(
+  task: Task,
+  entry: BoardEntry | undefined,
+  filters: BoardFilters,
+): boolean {
+  if (filters.lists && !filters.lists.has(task.listId)) return false;
+  return filters.priorities.has(priorityOf(entry));
+}
+
 export function cardVisible(
   task: Task,
   entry: BoardEntry,
   filters: BoardFilters,
   today: LocalDate,
 ): boolean {
-  if (filters.lists && !filters.lists.has(task.listId)) return false;
-  if (!filters.priorities.has(priorityOf(entry))) return false;
+  if (!listAndPriorityVisible(task, entry, filters)) return false;
   // Done work is history, not a plan, so a planned-date cut-off never hides it.
   if (!filters.planned.on || entry.column === 'Done' || !task.due) return true;
   return task.due <= addDays(today, filters.planned.days);

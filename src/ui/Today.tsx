@@ -1,5 +1,6 @@
 import { listColour } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
+import { DEFAULT_FILTERS } from '../domain/filters';
 import { todaySections } from '../domain/today';
 import type { Task } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
@@ -17,7 +18,12 @@ interface Props {
 export function Today({ store, snapshot, phone, act }: Props) {
   const now = new Date();
   const today = localDate(now);
-  const { overdue, dueToday, pinned } = todaySections(snapshot.tasks, snapshot.entries, now);
+  const { overdue, dueToday, pinned } = todaySections(
+    snapshot.tasks,
+    snapshot.entries,
+    now,
+    DEFAULT_FILTERS,
+  );
   const listTitle = new Map(snapshot.lists.map((l) => [l.id, l.title]));
 
   const sections = [

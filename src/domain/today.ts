@@ -1,4 +1,5 @@
 import { localDate } from './dates';
+import { type BoardFilters, listAndPriorityVisible } from './filters';
 import { type BoardEntries, COLUMNS, type Task } from './types';
 
 export interface TodaySections {
@@ -15,6 +16,7 @@ export function todaySections(
   tasks: Task[],
   entries: BoardEntries,
   now: Date,
+  filters: BoardFilters,
   timeZone?: string,
 ): TodaySections {
   const today = localDate(now, timeZone);
@@ -22,6 +24,7 @@ export function todaySections(
 
   for (const t of tasks) {
     if (t.parent !== null || t.completed) continue;
+    if (!listAndPriorityVisible(t, entries[t.id], filters)) continue;
     // A task is claimed by the first section it fits, so it never shows twice.
     if (t.due !== null && t.due < today) sections.overdue.push(t);
     else if (t.due === today) sections.dueToday.push(t);
