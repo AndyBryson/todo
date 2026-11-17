@@ -155,3 +155,14 @@ test('board.json never contains task titles', async () => {
   expect(google.board.raw).not.toContain('Buy milk');
   expect(google.board.raw).not.toContain('semi-skimmed');
 });
+
+test('the same entries in a different key order are not rewritten to Drive', async () => {
+  google = createFakeGoogle({
+    lists: LISTS,
+    tasks: [task('a'), task('b', { position: '1' })],
+    board: file({ a: entry(), b: entry({ rank: 2048 }) }),
+  });
+  await store.setEntries({ b: entry({ rank: 2048 }), a: entry() });
+  await pull(google, store, NOW);
+  expect(google.calls.some((c) => c.method === 'writeBoard')).toBe(false);
+});

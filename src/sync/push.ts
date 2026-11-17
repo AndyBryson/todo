@@ -2,6 +2,7 @@ import type { Task } from '../domain/types';
 import {
   AuthError,
   type GoogleApi,
+  HttpError,
   NotFoundError,
   OfflineError,
   type TaskPatch,
@@ -85,8 +86,36 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
       await store.commit((s) => dropDeleted(s, idOf(op), title));
       return;
     }
+    if (isPermanentRefusal(error)) {
+      const status = error.status;
+      await store.commit((s) => dropRefused(s, head, status));
+      return;
+    }
     throw error;
   }
+}
+
+// A 4xx other than auth, not-found, timeout or rate limit will never succeed on
+// retry, so leaving it at the head would block every later edit and pull.
+function isPermanentRefusal(error: unknown): error is HttpError {
+  return (
+    error instanceof HttpError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![401, 404, 408, 429].includes(error.status)
+  );
+}
+
+function dropRefused(s: Snapshot, head: QueuedOp, status: number): Change {
+  const id = idOf(head.op);
+  const title =
+    s.tasks.find((t) => t.id === id)?.title ||
+    (head.op.kind === 'create' ? head.op.task.title : '') ||
+    'A task';
+  return {
+    dequeue: s.queued.some((q) => q.seq === head.seq) ? [head.seq] : [],
+    notices: [`Google refused a change to “${title}” (error ${status}), so it was dropped.`],
+  };
 }
 
 async function runPatch(

@@ -64,7 +64,20 @@ export function parseBoardFile(raw: string | null): BoardEntries {
 }
 
 export function serialiseBoard(entries: BoardEntries): string {
-  const file: BoardFile = { version: 1, entries };
+  // Sorted so identical entries always serialise identically; otherwise devices
+  // holding the same data in a different key order would keep rewriting the file.
+  const sorted: BoardEntries = {};
+  for (const id of Object.keys(entries).sort()) {
+    const e = entries[id] as BoardEntry;
+    sorted[id] = {
+      column: e.column,
+      rank: e.rank,
+      pinned: e.pinned,
+      openColumn: e.openColumn,
+      updatedAt: e.updatedAt,
+    };
+  }
+  const file: BoardFile = { version: 1, entries: sorted };
   return JSON.stringify(file);
 }
 

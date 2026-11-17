@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { entry, task } from '../domain/test-fixtures';
-import { AuthError, OfflineError } from '../google/api';
+import { AuthError, HttpError, OfflineError } from '../google/api';
 import { createFakeGoogle, type FakeGoogle } from '../google/fake';
 import { openStore, type Store } from '../store/db';
 import { addTask, deleteTask, editTask, moveCard, moveToList } from '../store/edits';
@@ -184,4 +184,24 @@ test('a move to a deleted list is dropped and the task goes back to its old list
   expect(s.tasks.find((t) => t.id === 'x')?.listId).toBe('L1');
   expect(s.entries.x?.column).toBe('Next');
   expect(s.notices[0]?.text).toBe("“x” couldn't be moved because the list no longer exists.");
+});
+
+test('a permanent 4xx drops the op with a notice and replay carries on', async () => {
+  await editTask(store, 'x', { title: 'Renamed' });
+  await editTask(store, 'y', { title: 'Other' });
+  google.failOn('patchTask', new HttpError(400, 'bad'), { times: 1 });
+  expect(await replay(google, store)).toBe('done');
+  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    'Google refused a change to “Renamed” (error 400), so it was dropped.',
+  ]);
+  expect(google.tasks.get('y')?.title).toBe('Other');
+});
+
+test.each([500, 408, 429])('a %i keeps the op at the head and reports an error', async (status) => {
+  await editTask(store, 'x', { title: 'Renamed' });
+  google.failOn('patchTask', new HttpError(status, 'later'));
+  expect(await replay(google, store)).toBe('error');
+  expect(await store.queue()).toHaveLength(1);
+  expect(store.snapshot().notices).toEqual([]);
 });

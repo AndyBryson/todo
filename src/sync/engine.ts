@@ -18,6 +18,7 @@ export interface SyncEngine {
   status(): SyncStatus;
   subscribe(fn: () => void): () => void;
   start(): void;
+  stop(): void;
 }
 
 const DEBOUNCE_MS = 500;
@@ -31,11 +32,18 @@ export function createSyncEngine(
   const listeners = new Set<() => void>();
   let inflight: Promise<void> | null = null;
   let again = false;
+  let stopStart: (() => void) | null = null;
   let debounce: ReturnType<typeof setTimeout> | undefined;
 
   function setStatus(next: SyncStatus) {
     current = next;
-    for (const fn of [...listeners]) fn();
+    for (const fn of [...listeners]) {
+      try {
+        fn();
+      } catch {
+        // One broken subscriber must not abort the sync pass.
+      }
+    }
   }
 
   async function cycle(): Promise<void> {
@@ -91,7 +99,7 @@ export function createSyncEngine(
     return inflight;
   }
 
-  return {
+  const engine: SyncEngine = {
     syncNow,
     requestSync() {
       clearTimeout(debounce);
@@ -105,17 +113,36 @@ export function createSyncEngine(
       };
     },
     start() {
+      if (stopStart) return;
       void syncNow();
-      if (typeof document === 'undefined' || typeof window === 'undefined') return;
+      if (typeof document === 'undefined' || typeof window === 'undefined') {
+        stopStart = () => undefined;
+        return;
+      }
       const visible = () => document.visibilityState === 'visible';
-      document.addEventListener('visibilitychange', () => {
-        if (visible()) void syncNow();
-      });
-      window.addEventListener('focus', () => void syncNow());
-      window.addEventListener('online', () => void syncNow());
-      setInterval(() => {
+      // Focus and visibility usually fire together, so both go through the debounce.
+      const onVisibility = () => {
+        if (visible()) engine.requestSync();
+      };
+      const onWake = () => engine.requestSync();
+      document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('focus', onWake);
+      window.addEventListener('online', onWake);
+      const timer = setInterval(() => {
         if (visible()) void syncNow();
       }, SYNC_INTERVAL_MS);
+      stopStart = () => {
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('focus', onWake);
+        window.removeEventListener('online', onWake);
+        clearInterval(timer);
+      };
+    },
+    stop() {
+      clearTimeout(debounce);
+      stopStart?.();
+      stopStart = null;
     },
   };
+  return engine;
 }

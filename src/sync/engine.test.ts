@@ -1,6 +1,7 @@
-import { beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { SYNC_INTERVAL_MS } from '../config';
 import { task } from '../domain/test-fixtures';
-import { AuthError, OfflineError } from '../google/api';
+import { AuthError, HttpError, OfflineError } from '../google/api';
 import { createFakeGoogle, type FakeGoogle } from '../google/fake';
 import { openStore, type Store } from '../store/db';
 import { addTask, editTask } from '../store/edits';
@@ -77,4 +78,62 @@ test('an edit made mid-pull is sent and pulled on the follow-up pass', async () 
   expect(google.tasks.get('x')?.title).toBe('Mine');
   expect(await store.queue()).toEqual([]);
   expect(engine.status().kind).toBe('synced');
+});
+
+test('a failed send shows as an error and does not pull', async () => {
+  await editTask(store, 'x', { title: 'a' });
+  google.failOn('getTask', new HttpError(500, 'server'));
+  await engine.syncNow();
+  expect(engine.status().kind).toBe('error');
+  expect(google.calls.some((c) => c.method === 'listTasks')).toBe(false);
+});
+
+test('a throwing subscriber does not break the pass', async () => {
+  engine.subscribe(() => {
+    throw new Error('listener');
+  });
+  await engine.syncNow();
+  expect(engine.status().kind).toBe('synced');
+});
+
+const listCalls = () => google.calls.filter((c) => c.method === 'listTaskLists').length;
+
+afterEach(() => {
+  engine.stop();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+test('requestSync turns a burst into one pass', async () => {
+  vi.useFakeTimers();
+  engine.requestSync();
+  engine.requestSync();
+  engine.requestSync();
+  await vi.advanceTimersByTimeAsync(499);
+  expect(listCalls()).toBe(0);
+  await vi.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(listCalls()).toBe(1);
+});
+
+test('the interval only syncs while the page is visible', async () => {
+  const doc = {
+    visibilityState: 'hidden',
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+  vi.stubGlobal('document', doc);
+  vi.stubGlobal('window', {
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  });
+  vi.useFakeTimers();
+  engine.start();
+  await vi.advanceTimersByTimeAsync(50);
+  const afterStart = listCalls();
+  await vi.advanceTimersByTimeAsync(SYNC_INTERVAL_MS * 3);
+  expect(listCalls()).toBe(afterStart);
+  doc.visibilityState = 'visible';
+  await vi.advanceTimersByTimeAsync(SYNC_INTERVAL_MS + 50);
+  expect(listCalls()).toBe(afterStart + 1);
 });
