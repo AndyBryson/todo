@@ -30,6 +30,8 @@
   --bar-h: 3.2rem;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
+  /* Lets native controls (date picker, scrollbars) follow the theme. */
+  color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
 }
@@ -79,6 +81,43 @@ button {
   cursor: pointer;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.header :focus-visible {
+  outline-color: var(--topbar-text);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+input:not([type="checkbox"]),
+select,
+textarea {
+  padding: 0.4rem 0.6rem;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--muted);
+}
+
 .header {
   background: var(--topbar);
   color: var(--topbar-text);
@@ -88,7 +127,7 @@ button {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.5rem 1rem;
   padding: 0.5rem 1rem;
 }
@@ -113,6 +152,7 @@ button {
 }
 
 .status {
+  margin-left: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -131,14 +171,17 @@ button {
 }
 
 .primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
   border: 0;
   border-radius: 0.5rem;
   padding: 0.4rem 0.9rem;
 }
 
 .line {
+  color: var(--text);
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -311,12 +354,7 @@ button {
 
 .quick-add select,
 .quick-add input {
-  font: inherit;
-  padding: 0.35rem 0.5rem;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 0.4rem 0.55rem;
 }
 
 .detail {
@@ -325,12 +363,13 @@ button {
   padding: 0;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border: 0;
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-2);
 }
 
 .detail::backdrop {
-  background: rgb(0 0 0 / 0.4);
+  background: rgb(15 20 40 / 0.45);
 }
 
 .detail.phone {
@@ -361,10 +400,12 @@ button {
 }
 
 .detail-close {
-  padding: 0.3rem 0.8rem;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 0.35rem 0.9rem;
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius-card);
 }
 
 .field {
@@ -375,16 +416,12 @@ button {
   color: var(--muted);
 }
 
-.field input,
-.field textarea,
-.field select,
 .row button {
-  font: inherit;
-  padding: 0.4rem 0.5rem;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius-card);
 }
 
 .field textarea {
@@ -410,8 +447,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
 }
 
 .danger {
@@ -420,7 +458,7 @@ button {
   color: var(--error);
   background: none;
   border: 1px solid var(--error);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
 }
 
 .today {
@@ -429,8 +467,12 @@ button {
 }
 
 .today h2 {
-  margin: 1.25rem 0 0.5rem;
-  font-size: 1rem;
+  margin: 1.5rem 0 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .today-list {
@@ -447,10 +489,12 @@ button {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.65rem 0.8rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-left: 4px solid var(--list, var(--border));
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
 }
 
 .today-title {
@@ -474,17 +518,17 @@ button {
 
 .switcher button {
   flex: none;
-  padding: 0.4rem 0.8rem;
+  padding: 0.4rem 0.85rem;
+  color: var(--col);
+  font-weight: 600;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--col);
   border-radius: 999px;
 }
 
 .switcher button[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
+  color: var(--on-col);
+  background: var(--col);
 }
 
 .board.phone {
@@ -505,6 +549,7 @@ button {
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgb(20 30 60 / 0.06);
   height: calc(var(--bar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -523,8 +568,8 @@ button {
 }
 
 .phone-nav a[aria-current="page"] {
-  color: var(--text);
-  font-weight: 600;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .phone-nav button {
@@ -539,6 +584,8 @@ button {
   padding: 0.75rem 1rem 0.25rem;
   background: var(--surface);
   border-top: 1px solid var(--border);
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  box-shadow: var(--shadow-2);
 }
 
 @media (max-width: 700px) {
@@ -643,7 +690,8 @@ button {
 
 .card.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-left-color: var(--list, var(--accent));
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .selection-bar {
@@ -656,6 +704,21 @@ button {
   padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgb(20 30 60 / 0.08);
+}
+
+.selection-bar button {
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius-card);
+}
+
+.selection-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .selection-count {
@@ -692,34 +755,49 @@ button {
   flex: none;
   width: 13rem;
   padding: 1rem;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  align-self: stretch;
 }
 
 .sidebar h2 {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
 .sidebar > button,
 .filter-wrap > button {
   padding: 0.4rem 0.9rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius-card);
 }
 
 .sidebar > button[aria-pressed="true"] {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-text);
+  background: var(--accent);
 }
 
 .sidebar-lists {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.25rem;
+  align-self: stretch;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.sidebar-lists .check {
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--chip) 12%, transparent);
 }
 
 .sidebar .check .dot {
@@ -743,11 +821,11 @@ button {
   flex-direction: column;
   gap: 0.75rem;
   width: 16rem;
-  padding: 0.75rem;
+  padding: 0.85rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-2);
 }
 
 .filter-menu fieldset {
@@ -762,7 +840,10 @@ button {
 .filter-menu legend {
   padding: 0;
   margin-bottom: 0.4rem;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -775,18 +856,11 @@ button {
 
 .days {
   width: 3.5rem;
-  padding: 0.25rem 0.4rem;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
 }
 
 .phone-top {
   display: flex;
   align-items: flex-start;
-  gap: 0.4rem;
 }
 
 .phone-top .switcher {
@@ -796,21 +870,30 @@ button {
 
 .menu-button {
   flex: none;
-  padding: 0.4rem 0.8rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
   position: relative;
+  padding: 0.3rem 0.7rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--topbar-text);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-card);
+}
+
+.menu-button:hover,
+.menu-button[aria-expanded="true"] {
+  background: rgb(255 255 255 / 0.18);
 }
 
 .menu-dot {
   position: absolute;
-  top: 0.15rem;
-  right: 0.25rem;
-  width: 0.5rem;
-  height: 0.5rem;
+  top: 0.1rem;
+  right: 0.2rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border-radius: 50%;
-  background: var(--accent, currentColor);
+  background: #ffd43b;
+  box-shadow: 0 0 0 2px var(--topbar);
 }
 
 .drawer {
@@ -823,6 +906,7 @@ button {
   background: var(--surface);
   border: 0;
   border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
 }
 
 .drawer[open] {
@@ -831,7 +915,7 @@ button {
 }
 
 .drawer::backdrop {
-  background: rgb(0 0 0 / 0.4);
+  background: rgb(15 20 40 / 0.45);
 }
 
 .drawer-body {
@@ -840,6 +924,7 @@ button {
 
 .drawer .sidebar {
   width: auto;
+  border-right: 0;
 }
 
 .drawer .filter-menu {
@@ -864,11 +949,11 @@ button {
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow-y: auto;
-  padding: 0.25rem;
+  padding: 0.3rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-2);
 }
 
 .card-menu button,
@@ -888,7 +973,7 @@ button {
 
 .card-menu button:hover:not(:disabled),
 .card-menu button:focus-visible {
-  background: var(--bg);
+  background: var(--accent-soft);
 }
 
 .card-menu button:disabled {
@@ -911,8 +996,4 @@ button {
 .card-menu .mark {
   display: inline-block;
   width: 1rem;
-}
-
-.desktop-top {
-  margin-bottom: 0.5rem;
 }

@@ -9,6 +9,8 @@ interface Props {
   route: string;
   onSignIn(): void;
   onDismiss(id: string): void;
+  // The board's lists-and-filters button; absent on Today.
+  menu?: { filtersOn: number; expanded: boolean; onClick(): void };
 }
 
 const time = (iso: string) =>
@@ -39,10 +41,28 @@ export function Header({
   route,
   onSignIn,
   onDismiss,
+  menu,
 }: Props) {
   return (
     <header class="header">
       <div class="bar">
+        {menu && (
+          // The sidebar can be out of sight and counts only cover visible cards, so a
+          // forgotten filter must show on the button that opens it.
+          <button
+            type="button"
+            class="menu-button"
+            aria-label={
+              menu.filtersOn > 0
+                ? `Lists and filters, ${menu.filtersOn} ${menu.filtersOn === 1 ? 'filter' : 'filters'} on`
+                : 'Lists and filters'
+            }
+            aria-expanded={menu.expanded}
+            onClick={menu.onClick}
+          >
+            ☰{menu.filtersOn > 0 && <span class="menu-dot" aria-hidden="true" />}
+          </button>
+        )}
         <nav class="nav">
           <a href="#/board" aria-current={route === 'board' ? 'page' : undefined}>
             Board

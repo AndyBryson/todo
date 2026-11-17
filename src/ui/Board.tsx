@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
-import { activeFilterCount, type BoardFilters } from '../domain/filters';
+import type { BoardFilters } from '../domain/filters';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
@@ -18,11 +18,7 @@ interface Props {
   act(fn: () => Promise<unknown>): Promise<boolean>;
   selecting: boolean;
   onSelecting(on: boolean): void;
-  onOpenDrawer(): void;
-  drawerOpen: boolean;
   // Desktop only: the sidebar is permanent there, so this shows or hides it.
-  sidebarOpen: boolean;
-  onToggleSidebar(): void;
 }
 
 const COLUMN_KEY = 'todo.column';
@@ -38,33 +34,13 @@ function loadColumn(): ColumnName {
 
 const openTask = (id: string) => openDetail('board', id);
 
-export function Board({
-  store,
-  snapshot,
-  filters,
-  phone,
-  act,
-  selecting,
-  onSelecting,
-  onOpenDrawer,
-  drawerOpen,
-  sidebarOpen,
-  onToggleSidebar,
-}: Props) {
+export function Board({ store, snapshot, filters, phone, act, selecting, onSelecting }: Props) {
   const [selected, setSelected] = useState(loadColumn);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; touch: boolean } | null>(
     null,
   );
-  // The sidebar can be out of sight, and counts only cover visible cards, so a
-  // forgotten filter must show on the button that opens it.
-  const filtersOn = (filters.lists ? 1 : 0) + activeFilterCount(filters);
-  const menuLabel =
-    filtersOn > 0
-      ? `Lists and filters, ${filtersOn} ${filtersOn === 1 ? 'filter' : 'filters'} on`
-      : 'Lists and filters';
-  const menuDot = filtersOn > 0 && <span class="menu-dot" aria-hidden="true" />;
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
 
@@ -156,37 +132,16 @@ export function Board({
 
   return (
     <>
-      {!phone && (
-        <div class="desktop-top">
-          <button
-            type="button"
-            class="menu-button"
-            aria-label={menuLabel}
-            aria-expanded={sidebarOpen}
-            onClick={onToggleSidebar}
-          >
-            ☰{menuDot}
-          </button>
-        </div>
-      )}
       <div class={phone ? 'board phone' : 'board'}>
         {phone && (
           <div class="phone-top">
-            <button
-              type="button"
-              class="menu-button"
-              aria-label={menuLabel}
-              aria-expanded={drawerOpen}
-              onClick={onOpenDrawer}
-            >
-              ☰{menuDot}
-            </button>
             <div class="switcher">
               {COLUMNS.map((name) => (
                 <button
                   key={name}
                   type="button"
                   aria-pressed={name === selected}
+                  style={{ '--col': `var(--col-${name.toLowerCase()})` }}
                   onClick={() => select(name)}
                 >
                   {name} <span class="count">{board[name].length}</span>

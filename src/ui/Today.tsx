@@ -27,7 +27,7 @@ export function Today({ store, snapshot, phone, act }: Props) {
   ].filter((s) => s.tasks.length > 0);
 
   const row = (t: Task) => (
-    <li class="today-row" key={t.id}>
+    <li class="today-row" key={t.id} style={{ '--list': listColour(t.listId) }}>
       <input
         type="checkbox"
         aria-label={`Complete “${t.title}”`}
@@ -43,10 +43,7 @@ export function Today({ store, snapshot, phone, act }: Props) {
         {t.title}
       </button>
       <span class="card-meta">
-        <span class="chip-static" style={{ '--chip': listColour(t.listId) }}>
-          <span class="dot" />
-          {listTitle.get(t.listId) ?? ''}
-        </span>
+        <span class="chip-static">{listTitle.get(t.listId) ?? ''}</span>
         {t.due && (
           <time class={t.due < today ? 'due overdue' : 'due'} dateTime={t.due}>
             {formatDue(t.due)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
+import { activeFilterCount, type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
 import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
@@ -234,6 +234,15 @@ export function App({ store, engine, auth }: Props) {
         route={view}
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
+        menu={
+          view === 'board'
+            ? {
+                filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
+                expanded: phone ? drawerOpen : sidebarOpen,
+                onClick: phone ? () => setDrawerOpen(true) : toggleSidebar,
+              }
+            : undefined
+        }
       />
       <div class={view === 'board' && !phone ? 'with-sidebar' : undefined}>
         {view === 'board' && !phone && sidebarOpen && <Sidebar {...sidebarProps} />}
@@ -249,10 +258,6 @@ export function App({ store, engine, auth }: Props) {
               act={act}
               selecting={selecting}
               onSelecting={setSelecting}
-              onOpenDrawer={() => setDrawerOpen(true)}
-              drawerOpen={drawerOpen}
-              sidebarOpen={sidebarOpen}
-              onToggleSidebar={toggleSidebar}
             />
           )}
         </main>
