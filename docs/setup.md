@@ -43,6 +43,6 @@ The repo `AndyBryson/todo` already exists.
 
 ## 6. "Sign in needed"
 
-Google access tokens last about an hour. The app renews them quietly in the background. If Google refuses that (you were signed out of Google, or revoked access, or the browser blocked the quiet renewal), the app shows **Sign in needed** and stops syncing. Your changes are kept on the device meanwhile.
+Google's browser sign-in gives the app access for about an hour. The app tries to renew it quietly, but browsers (especially iPhone) often block that, so **Sign in needed** may appear roughly once an hour while syncing. Editing keeps working offline meanwhile and nothing is lost.
 
-Tap **Sign in**. It opens Google's sign-in window, and syncing resumes with nothing lost. It has to be a tap because iPhone blocks sign-in windows that open on their own.
+Tap **Sign in**. It opens Google's sign-in window and syncing resumes. It has to be a tap because iPhone blocks sign-in windows that open on their own.

@@ -109,10 +109,19 @@ export function createHttpGoogle(
       spaces: 'appDataFolder',
       q: `name='${BOARD_NAME}'`,
       fields: 'files(id,version)',
+      // Every device settles on the oldest board.json if two ever exist.
+      orderBy: 'createdTime',
     });
     const res = await request(`${DRIVE}?${query}`);
     const { files }: { files?: DriveFile[] } = await res.json();
     return files?.[0] ?? null;
+  }
+
+  async function fileVersion(id: string): Promise<string> {
+    const res = await request(`${DRIVE}/${id}?fields=version`);
+    const { version }: DriveFile = await res.json();
+    if (version === undefined) throw new HttpError(502, `No version returned for file ${id}`);
+    return String(version);
   }
 
   return {
@@ -177,7 +186,9 @@ export function createHttpGoogle(
       const file = await findBoard();
       if (!file) return { raw: null, version: null };
       const res = await request(`${DRIVE}/${file.id}?alt=media`);
-      return { raw: await res.text(), version: String(file.version) };
+      // writeBoard checks the version on the file itself, so read it the same way.
+      const raw = await res.text();
+      return { raw, version: await fileVersion(file.id) };
     },
 
     async writeBoard(raw, expectedVersion) {
@@ -198,9 +209,7 @@ export function createHttpGoogle(
       }
       if (expectedVersion === null) return 'conflict';
       // The listing can lag behind writes, so check the version on the file itself.
-      const res = await request(`${DRIVE}/${file.id}?fields=version`);
-      const { version }: DriveFile = await res.json();
-      if (String(version) !== expectedVersion) return 'conflict';
+      if ((await fileVersion(file.id)) !== expectedVersion) return 'conflict';
       await request(`${DRIVE_UPLOAD}/${file.id}?uploadType=media`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

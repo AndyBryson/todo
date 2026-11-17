@@ -1,4 +1,4 @@
-import { AuthError } from './api';
+import { AuthError, OfflineError } from './api';
 
 export interface Auth {
   getToken(): Promise<string>;
@@ -41,19 +41,28 @@ function loadScript(): Promise<void> {
     el.async = true;
     el.onload = () => resolve();
     el.onerror = () => {
-      scriptLoad = undefined; // allow a retry once back online
-      reject(new AuthError('Could not load Google sign-in'));
+      // Usually the device is offline; drop the tag so a later call can retry.
+      el.remove();
+      scriptLoad = undefined;
+      reject(new OfflineError('Could not load Google sign-in'));
     };
     document.head.append(el);
   });
   return scriptLoad;
 }
 
+interface Waiting {
+  resolve: () => void;
+  reject: (e: Error) => void;
+}
+
 export function createAuth(clientId: string): Auth {
   let token: string | null = null;
   let expiresAt = 0;
   let client: google.accounts.oauth2.TokenClient | undefined;
-  let waiting: { resolve: () => void; reject: (e: Error) => void } | undefined;
+  // Only the newest request is waiting on the GIS callback; each request owns its
+  // own promise, so a late timeout can only ever affect itself.
+  let waiting: Waiting | undefined;
   let silent: Promise<string> | undefined;
   const listeners = new Set<() => void>();
 
@@ -62,28 +71,48 @@ export function createAuth(clientId: string): Auth {
   };
   const fresh = (margin: number) => token !== null && expiresAt - Date.now() > margin;
 
-  async function request(prompt: '' | 'consent'): Promise<void> {
+  async function request(prompt: '' | 'consent', timeoutMs?: number): Promise<void> {
     await loadScript();
     client ??= google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: SCOPES,
       callback: (res) => {
+        const current = waiting;
+        waiting = undefined;
         if (res.error || !res.access_token) {
-          waiting?.reject(new AuthError(res.error ?? 'No token returned'));
+          current?.reject(new AuthError(res.error ?? 'No token returned'));
           return;
         }
         token = res.access_token;
         expiresAt = Date.now() + Number(res.expires_in ?? 3600) * 1000;
         rememberConsent();
-        waiting?.resolve();
+        current?.resolve();
       },
-      error_callback: (err) => waiting?.reject(new AuthError(err.type)),
+      error_callback: (err) => {
+        const current = waiting;
+        waiting = undefined;
+        current?.reject(new AuthError(err.type));
+      },
     });
     const c = client;
-    await new Promise<void>((resolve, reject) => {
-      waiting = { resolve, reject };
-      c.requestAccessToken({ prompt });
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const mine: Waiting = { resolve, reject };
+        // A newer request supersedes an older one that never got an answer.
+        waiting?.reject(new AuthError('Superseded by a newer sign-in request'));
+        waiting = mine;
+        if (timeoutMs !== undefined) {
+          timer = setTimeout(() => {
+            if (waiting === mine) waiting = undefined;
+            reject(new AuthError('Silent sign-in timed out'));
+          }, timeoutMs);
+        }
+        c.requestAccessToken({ prompt });
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   return {
@@ -93,19 +122,14 @@ export function createAuth(clientId: string): Auth {
       if (!hasConsented()) throw new AuthError('Sign in needed');
       silent ??= (async () => {
         try {
-          await Promise.race([
-            request(''),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () => reject(new AuthError('Silent sign-in timed out')),
-                SILENT_TIMEOUT_MS,
-              ),
-            ),
-          ]);
+          await request('', SILENT_TIMEOUT_MS);
           return token as string;
         } catch (e) {
-          token = null;
-          throw e instanceof AuthError ? e : new AuthError('Sign in needed');
+          // A failed renewal must not discard a token that still works.
+          if (token !== null && fresh(0)) return token;
+          throw e instanceof AuthError || e instanceof OfflineError
+            ? e
+            : new AuthError('Sign in needed');
         } finally {
           silent = undefined;
           notify();

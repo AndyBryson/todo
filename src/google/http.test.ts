@@ -54,6 +54,16 @@ describe('listTasks', () => {
     expect(requests).toHaveLength(3);
   });
 
+  test('follows every page of the completed query too', async () => {
+    const { google } = api((url) => {
+      if (url.searchParams.get('showCompleted') !== 'true') return json({});
+      return url.searchParams.get('pageToken')
+        ? json({ items: [item('c2')] })
+        : json({ items: [item('c1')], nextPageToken: 'n' });
+    });
+    expect((await google.listTasks('L1', SINCE)).map((t) => t.id).sort()).toEqual(['c1', 'c2']);
+  });
+
   test('a task in both queries appears once', async () => {
     const { google } = api(() => json({ items: [item('same')] }));
     expect(await google.listTasks('L1', SINCE)).toHaveLength(1);
@@ -186,12 +196,12 @@ describe('board file', () => {
     expect(await google.readBoard()).toEqual({ raw: null, version: null });
   });
 
-  test('reads content and version as a string', async () => {
-    const { google } = api((url) =>
-      url.searchParams.get('alt') === 'media'
-        ? new Response('{"version":1}')
-        : json({ files: [{ id: 'F', version: '7' }] }),
-    );
+  test('reads content and the version taken from the file itself', async () => {
+    const { google } = api((url) => {
+      if (url.searchParams.get('alt') === 'media') return new Response('{"version":1}');
+      if (url.searchParams.get('fields') === 'version') return json({ version: '7' });
+      return json({ files: [{ id: 'F', version: '3' }] });
+    });
     expect(await google.readBoard()).toEqual({ raw: '{"version":1}', version: '7' });
   });
 
