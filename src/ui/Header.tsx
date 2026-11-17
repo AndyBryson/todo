@@ -51,13 +51,15 @@ export function Header({
             Today
           </a>
         </nav>
-        <div class="status" aria-live="polite">
-          <span class={status.kind === 'error' ? 'error' : undefined}>{statusText(status)}</span>
-          {queueLength > 0 && (
-            <span class="queue">
-              {queueLength} {queueLength === 1 ? 'change' : 'changes'} waiting
-            </span>
-          )}
+        <div class="status">
+          <div class="status-text" aria-live="polite">
+            <span class={status.kind === 'error' ? 'error' : undefined}>{statusText(status)}</span>
+            {queueLength > 0 && (
+              <span class="queue">
+                {queueLength} {queueLength === 1 ? 'change' : 'changes'} waiting
+              </span>
+            )}
+          </div>
           {status.kind === 'signin' && (
             <button type="button" class="primary" onClick={onSignIn}>
               Sign in

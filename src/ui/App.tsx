@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
 import type { SyncEngine } from '../sync/engine';
+import { Board } from './Board';
 import { Header } from './Header';
 import { useSnapshot, useSyncStatus } from './hooks';
 import { ListFilter } from './ListFilter';
@@ -49,21 +50,36 @@ export function App({ store, engine, auth }: Props) {
     return () => removeEventListener('hashchange', onHash);
   }, []);
 
+  useEffect(() => () => clearTimeout(errorTimer.current), []);
+
+  const showError = useCallback((e: unknown) => {
+    setActionError(e instanceof Error ? e.message : String(e));
+    clearTimeout(errorTimer.current);
+    errorTimer.current = setTimeout(() => setActionError(null), 6000);
+  }, []);
+
   // The one place an edit is paired with a sync request.
-  // Passed to views in Tasks 11 to 13.
-  const _act = useCallback(
+  const act = useCallback(
     async (fn: () => Promise<void>) => {
       try {
         await fn();
+        clearTimeout(errorTimer.current);
+        setActionError(null);
         engine.requestSync();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
-        clearTimeout(errorTimer.current);
-        errorTimer.current = setTimeout(() => setActionError(null), 6000);
+        showError(e);
       }
     },
-    [engine],
+    [engine, showError],
   );
+
+  // Lists can disappear after a sync; a stale selection must not hide every card.
+  const effectiveFilter = useMemo(() => {
+    if (!filter) return null;
+    const ids = new Set(snapshot.lists.map((l) => l.id));
+    const kept = new Set([...filter].filter((id) => ids.has(id)));
+    return kept.size > 0 ? kept : null;
+  }, [filter, snapshot.lists]);
 
   function changeFilter(next: Set<string> | null) {
     setFilter(next);
@@ -75,7 +91,7 @@ export function App({ store, engine, auth }: Props) {
       await auth.signIn();
       await engine.syncNow();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      showError(e);
     }
   }
 
@@ -90,12 +106,12 @@ export function App({ store, engine, auth }: Props) {
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
       />
-      <ListFilter lists={snapshot.lists} selected={filter} onChange={changeFilter} />
+      <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
       <main class="main">
         {route === 'today' ? (
           <p class="placeholder">Today view arrives in a later task.</p>
         ) : (
-          <p class="placeholder">Board arrives in a later task.</p>
+          <Board store={store} snapshot={snapshot} filter={effectiveFilter} act={act} />
         )}
       </main>
     </>
