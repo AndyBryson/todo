@@ -27,7 +27,8 @@ function parseEntry(value: unknown): BoardEntry | null {
     !Number.isFinite(e.rank) ||
     typeof e.pinned !== 'boolean' ||
     !isOpenColumn(e.openColumn) ||
-    typeof e.updatedAt !== 'string'
+    typeof e.updatedAt !== 'string' ||
+    Number.isNaN(Date.parse(e.updatedAt))
   ) {
     return null;
   }
@@ -71,8 +72,9 @@ export function mergeEntries(local: BoardEntries, remote: BoardEntries): BoardEn
   const merged: BoardEntries = { ...local };
   for (const [id, theirs] of Object.entries(remote)) {
     const ours = merged[id];
-    // Equal timestamps keep remote so every device settles on the same entry.
-    if (!ours || theirs.updatedAt >= ours.updatedAt) merged[id] = theirs;
+    // Compare instants, not strings: offsets and fractional seconds break text order.
+    // Equal instants keep remote so every device settles on the same entry.
+    if (!ours || Date.parse(theirs.updatedAt) >= Date.parse(ours.updatedAt)) merged[id] = theirs;
   }
   return merged;
 }

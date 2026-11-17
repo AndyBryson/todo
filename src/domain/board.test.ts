@@ -59,10 +59,13 @@ describe('reconcile', () => {
     expect(Object.values(out).every((e) => e.column === 'Backlog' && !e.pinned)).toBe(true);
   });
 
-  test('positions compare numerically, not as text', () => {
-    const tasks = [task('ten', { position: '10' }), task('nine', { position: '9' })];
+  test('positions that differ only in the last of 20 digits keep their order', () => {
+    const tasks = [
+      task('later', { position: '00000000000000000010' }),
+      task('earlier', { position: '00000000000000000009' }),
+    ];
     const out = reconcile(tasks, LISTS, {}, NOW);
-    expect(out.nine?.rank).toBeLessThan(out.ten?.rank ?? 0);
+    expect(out.earlier?.rank).toBeLessThan(out.later?.rank ?? 0);
   });
 
   test('a task created in Google Home lands at the bottom of Backlog', () => {
@@ -146,6 +149,20 @@ describe('mergeEntries', () => {
     expect(Object.keys(out).sort()).toEqual(['a', 'b', 'c']);
   });
 
+  test('compares instants: fractional seconds and offsets', () => {
+    const fractional = mergeEntries(
+      { a: entry({ column: 'Next', updatedAt: '2026-11-17T10:00:00.500Z' }) },
+      { a: entry({ column: 'Doing', updatedAt: '2026-11-17T10:00:00Z' }) },
+    );
+    expect(fractional.a?.column).toBe('Next');
+    // 10:30+01:00 is 09:30Z, earlier than 10:00Z despite sorting later as text.
+    const offset = mergeEntries(
+      { a: entry({ column: 'Next', updatedAt: '2026-11-17T10:00:00Z' }) },
+      { a: entry({ column: 'Doing', updatedAt: '2026-11-17T10:30:00+01:00' }) },
+    );
+    expect(offset.a?.column).toBe('Next');
+  });
+
   test('a tie keeps the remote entry', () => {
     const out = mergeEntries({ a: entry({ column: 'Next' }) }, { a: entry({ column: 'Doing' }) });
     expect(out.a?.column).toBe('Doing');
@@ -166,7 +183,7 @@ describe('parseBoardFile', () => {
   });
 
   test('skips entries with a bad pin, openColumn of Done, or no updatedAt', () => {
-    const { updatedAt: _omit, ...noStamp } = entry();
+    const noStamp = { ...entry(), updatedAt: undefined };
     const raw = JSON.stringify({
       version: 1,
       entries: {
@@ -175,6 +192,8 @@ describe('parseBoardFile', () => {
         done: { ...entry(), openColumn: 'Done' },
         stamp: noStamp,
         rank: { ...entry(), rank: null },
+        garbage: { ...entry(), updatedAt: 'z' },
+        blank: { ...entry(), updatedAt: '' },
       },
     });
     expect(Object.keys(parseBoardFile(raw))).toEqual(['ok']);
