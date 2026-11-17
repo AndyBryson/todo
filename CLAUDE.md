@@ -1,6 +1,6 @@
 # Todo PWA
 
-My own front end over Google Tasks, built because the Google Tasks UI is not good enough. Tasks stay in Google, so Google Home and other Google clients keep working. The app adds a merged kanban board across lists (Backlog, Next, Doing, Waiting, Done), priority by card order, and a Today view. Extra data (column, rank, pinned) lives in the Drive `appDataFolder`. It is a Preact + TypeScript PWA that works offline and is hosted on GitHub Pages.
+My own front end over Google Tasks, built because the Google Tasks UI is not good enough. Tasks stay in Google, so Google Home and other Google clients keep working. The app adds a merged kanban board across lists (Backlog, Next, Doing, Waiting, Done), priority by card order, and a Today view. Extra data (column, rank, pinned, priority) lives in the Drive `appDataFolder`. It is a Preact + TypeScript PWA that works offline and is hosted on GitHub Pages.
 
 Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation plan: `docs/superpowers/plans/`.
 
@@ -29,6 +29,9 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 - Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog.
 - Completed steps (subtasks) are fetched at any age so a card's step count stays right; the Done column still shows only top-level tasks completed in the last 7 days.
 - Steps are ordered by Google's `position`. While changes wait, the app renumbers positions locally and the next pull replaces them. Google's insert without `previous` puts a task first, so a step create names its previous sibling.
+- Priority lives on board entries in `board.json`. Medium is stored as no field, and any other stored value reads as Medium.
+- Board entries keep unrecognised fields in `extra`. Never rebuild an entry from the known fields only. `board.json` output must stay byte-stable for unchanged data; a test pins it.
+- Board filters (`todo.filter`, `todo.priorities`, `todo.planned`, `todo.sidebar`) are per device. They apply to the board only, never Today.
 
 ## Testing policy
 
