@@ -25,6 +25,7 @@ interface GoogleTask {
   parent?: string;
   position?: string;
   updated?: string;
+  deleted?: boolean;
 }
 
 interface Page<T> {
@@ -50,6 +51,12 @@ function toTask(listId: string, g: GoogleTask): Task {
     position: g.position ?? '',
     updated: g.updated ?? '',
   };
+}
+
+// Google can still return a recently deleted task, with a 200, instead of a 404.
+function live(listId: string, g: GoogleTask): Task {
+  if (g.deleted === true) throw new NotFoundError(`task ${g.id} in ${listId} is deleted`);
+  return toTask(listId, g);
 }
 
 function taskBody(fields: { title?: string; notes?: string; due?: string | null }) {
@@ -142,13 +149,13 @@ export function createHttpGoogle(
         }),
       );
       const byId = new Map<string, Task>();
-      for (const g of [...open, ...done]) byId.set(g.id, toTask(listId, g));
+      for (const g of [...open, ...done]) if (g.deleted !== true) byId.set(g.id, toTask(listId, g));
       return [...byId.values()];
     },
 
     async getTask(listId, taskId) {
       const res = await request(taskUrl(listId, taskId));
-      return toTask(listId, await res.json());
+      return live(listId, await res.json());
     },
 
     async insertTask(listId, input: NewTask) {
@@ -169,7 +176,7 @@ export function createHttpGoogle(
       if (patch.completed === false)
         Object.assign(body, { status: 'needsAction', completed: null });
       const res = await request(taskUrl(listId, taskId), jsonInit('PATCH', body));
-      return toTask(listId, await res.json());
+      return live(listId, await res.json());
     },
 
     async deleteTask(listId, taskId) {
@@ -179,16 +186,18 @@ export function createHttpGoogle(
     async moveTask(listId, taskId, destinationListId) {
       const query = new URLSearchParams({ destinationTasklist: destinationListId });
       const res = await request(`${taskUrl(listId, taskId)}/move?${query}`, { method: 'POST' });
-      return toTask(destinationListId, await res.json());
+      return live(destinationListId, await res.json());
     },
 
     async readBoard() {
       const file = await findBoard();
       if (!file) return { raw: null, version: null };
-      const res = await request(`${DRIVE}/${file.id}?alt=media`);
       // writeBoard checks the version on the file itself, so read it the same way.
-      const raw = await res.text();
-      return { raw, version: await fileVersion(file.id) };
+      // Version first: a write landing in between then pairs newer content with an
+      // older version, which only costs a retry, never an overwrite.
+      const version = await fileVersion(file.id);
+      const res = await request(`${DRIVE}/${file.id}?alt=media`);
+      return { raw: await res.text(), version };
     },
 
     async writeBoard(raw, expectedVersion) {

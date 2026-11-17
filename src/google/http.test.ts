@@ -64,6 +64,11 @@ describe('listTasks', () => {
     expect((await google.listTasks('L1', SINCE)).map((t) => t.id).sort()).toEqual(['c1', 'c2']);
   });
 
+  test('skips tasks Google reports as deleted', async () => {
+    const { google } = api(() => json({ items: [item('kept'), item('gone', { deleted: true })] }));
+    expect((await google.listTasks('L1', SINCE)).map((t) => t.id)).toEqual(['kept']);
+  });
+
   test('a task in both queries appears once', async () => {
     const { google } = api(() => json({ items: [item('same')] }));
     expect(await google.listTasks('L1', SINCE)).toHaveLength(1);
@@ -129,7 +134,7 @@ describe('errors', () => {
     await expect(offline.listTaskLists()).rejects.toBeInstanceOf(OfflineError);
   });
 
-  test('404 and 410 are NotFoundError; other failures keep their status', async () => {
+  test('404, 410 and a task marked deleted are NotFoundError; other failures keep their status', async () => {
     for (const status of [404, 410]) {
       const { google } = api(() => json({}, status));
       await expect(google.getTask('L', 't')).rejects.toBeInstanceOf(NotFoundError);
@@ -139,6 +144,13 @@ describe('errors', () => {
       );
       await expect(google.moveTask('L', 't', 'M')).rejects.toBeInstanceOf(NotFoundError);
     }
+    const deleted = api(() => json(item('t', { deleted: true })));
+    await expect(deleted.google.getTask('L', 't')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(deleted.google.patchTask('L', 't', { title: 'x' })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    await expect(deleted.google.moveTask('L', 't', 'M')).rejects.toBeInstanceOf(NotFoundError);
+
     const { google } = api(() => json({}, 503));
     await expect(google.getTask('L', 't')).rejects.toMatchObject({
       constructor: HttpError,
@@ -196,13 +208,17 @@ describe('board file', () => {
     expect(await google.readBoard()).toEqual({ raw: null, version: null });
   });
 
-  test('reads content and the version taken from the file itself', async () => {
-    const { google } = api((url) => {
+  test('reads the version from the file itself, before the content', async () => {
+    const { google, requests } = api((url) => {
       if (url.searchParams.get('alt') === 'media') return new Response('{"version":1}');
       if (url.searchParams.get('fields') === 'version') return json({ version: '7' });
       return json({ files: [{ id: 'F', version: '3' }] });
     });
     expect(await google.readBoard()).toEqual({ raw: '{"version":1}', version: '7' });
+    // Content newer than its version only costs a retry; the reverse would overwrite a write.
+    expect(
+      requests.map((r) => r.url.searchParams.get('alt') ?? r.url.searchParams.get('fields')),
+    ).toEqual(['files(id,version)', 'version', 'media']);
   });
 
   test('first write creates the file in appDataFolder', async () => {

@@ -172,7 +172,7 @@ test('a create for a list that no longer exists is dropped with a notice', async
   expect(store.snapshot().tasks.find((t) => t.id === id)).toBeUndefined();
   expect(store.snapshot().entries[id]).toBeUndefined();
   expect(store.snapshot().notices[0]?.text).toBe(
-    '“Orphan” was deleted elsewhere, so your change was dropped.',
+    "“Orphan” couldn't be added because its list no longer exists.",
   );
 });
 
@@ -211,10 +211,39 @@ test('a permanent 4xx drops the op with a notice and replay carries on', async (
   expect(google.tasks.get('y')?.title).toBe('Other');
 });
 
-test.each([500, 408, 429])('a %i keeps the op at the head and reports an error', async (status) => {
-  await editTask(store, 'x', { title: 'Renamed' });
-  google.failOn('patchTask', new HttpError(status, 'later'));
-  expect(await replay(google, store)).toBe('error');
-  expect(await store.queue()).toHaveLength(1);
-  expect(store.snapshot().notices).toEqual([]);
+test.each([500, 403, 408, 429])(
+  'a %i keeps the op at the head and reports an error',
+  async (status) => {
+    await editTask(store, 'x', { title: 'Renamed' });
+    google.failOn('patchTask', new HttpError(status, 'later'));
+    expect(await replay(google, store)).toBe('error');
+    expect(await store.queue()).toHaveLength(1);
+    expect(store.snapshot().notices).toEqual([]);
+  },
+);
+
+test('a create that may have reached Google is adopted and then deleted, not dropped', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'Once', pinned: false }, NOW);
+  google.onAfter('insertTask', () => {
+    throw new OfflineError();
+  });
+  expect(await replay(google, store)).toBe('offline');
+  await deleteTask(store, id);
+  expect(await replay(google, store)).toBe('done');
+  expect([...google.tasks.values()].filter((t) => t.title === 'Once')).toEqual([]);
+  expect(store.snapshot().queued).toEqual([]);
+});
+
+test('edits to a subtask follow it back when its parent’s move to a deleted list is dropped', async () => {
+  const sub = task('sub', { parent: 'x' });
+  google.tasks.set('sub', { ...sub });
+  await store.commit({ putTasks: [sub] });
+  await moveToList(store, 'x', 'L2');
+  await editTask(store, 'sub', { notes: 'kept' });
+  google.lists.splice(1, 1);
+  expect(await replay(google, store)).toBe('done');
+  expect(google.tasks.get('sub')?.notes).toBe('kept');
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    "“x” couldn't be moved because the list no longer exists.",
+  ]);
 });

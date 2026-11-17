@@ -28,7 +28,7 @@ export async function replay(google: GoogleApi, store: Store): Promise<ReplayRes
   try {
     await store.commit(dropUnsentCreates);
     for (;;) {
-      const head = (await store.queue())[0];
+      const head = store.snapshot().queued[0];
       if (!head) return 'done';
       await run(google, store, head);
     }
@@ -40,12 +40,16 @@ export async function replay(google: GoogleApi, store: Store): Promise<ReplayRes
 }
 
 // A task created and deleted before anything was sent never needs to exist in Google.
+// A create already attempted may have reached Google, so it replays and the delete follows.
 function dropUnsentCreates(s: Snapshot): Change {
+  const unsent = new Set(
+    s.queued.flatMap((q) => (q.op.kind === 'create' && !q.op.attemptedAt ? [q.op.tempId] : [])),
+  );
   const doomed = new Set(
     s.queued
       .filter((q) => q.op.kind === 'delete')
       .map((q) => idOf(q.op))
-      .filter((id) => s.queued.some((q) => q.op.kind === 'create' && q.op.tempId === id)),
+      .filter((id) => unsent.has(id)),
   );
   return { dequeue: s.queued.filter((q) => doomed.has(idOf(q.op))).map((q) => q.seq) };
 }
@@ -82,8 +86,12 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      const title = op.kind === 'create' ? op.task.title : '';
-      await store.commit((s) => dropDeleted(s, idOf(op), title));
+      // Inserting can only miss on the list, so the list is what went.
+      const notice =
+        op.kind === 'create'
+          ? `“${op.task.title}” couldn't be added because its list no longer exists.`
+          : undefined;
+      await store.commit((s) => dropDeleted(s, idOf(op), notice));
       return;
     }
     if (isPermanentRefusal(error)) {
@@ -96,13 +104,14 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
 }
 
 // A 4xx other than auth, not-found, timeout or rate limit will never succeed on
-// retry, so leaving it at the head would block every later edit and pull.
+// retry, so leaving it at the head would block every later edit and pull. Google
+// reports rate limits as 403 as well as 429.
 function isPermanentRefusal(error: unknown): error is HttpError {
   return (
     error instanceof HttpError &&
     error.status >= 400 &&
     error.status < 500 &&
-    ![401, 404, 408, 429].includes(error.status)
+    ![401, 403, 404, 408, 429].includes(error.status)
   );
 }
 
@@ -164,14 +173,14 @@ function settle(s: Snapshot, seq: number, localId: string, result: Task): Change
   return { ...renamed, putTasks: putTasks.length ? putTasks : undefined, dequeue: [seq] };
 }
 
-function dropDeleted(s: Snapshot, taskId: string, fallbackTitle: string): Change {
+function dropDeleted(s: Snapshot, taskId: string, notice?: string): Change {
   const family = s.tasks.filter((t) => t.id === taskId || t.parent === taskId).map((t) => t.id);
-  const title = s.tasks.find((t) => t.id === taskId)?.title || fallbackTitle || 'A task';
+  const title = s.tasks.find((t) => t.id === taskId)?.title || 'A task';
   return {
     dequeue: s.queued.filter((q) => idOf(q.op) === taskId).map((q) => q.seq),
     removeTasks: family,
     removeEntries: [...new Set([taskId, ...family])],
-    notices: [`“${title}” was deleted elsewhere, so your change was dropped.`],
+    notices: [notice ?? `“${title}” was deleted elsewhere, so your change was dropped.`],
   };
 }
 
@@ -232,12 +241,13 @@ async function resolveMissingMove(
   }
   await store.commit((s) => {
     const family = s.tasks.filter((t) => t.id === op.taskId || t.parent === op.taskId);
+    const ids = new Set(family.map((t) => t.id));
     return {
       dequeue: [head.seq],
       putTasks: family.map((t) => ({ ...t, listId: op.listId })),
-      // Later edits were queued against the list the task appeared to be in.
+      // Later edits to the task or its subtasks were queued against the list it appeared to be in.
       requeue: s.queued
-        .filter((q) => q.seq !== head.seq && q.op.kind !== 'create' && q.op.taskId === op.taskId)
+        .filter((q) => q.seq !== head.seq && q.op.kind !== 'create' && ids.has(q.op.taskId))
         .map((q) => ({ seq: q.seq, op: { ...q.op, listId: op.listId } as Op })),
       notices: [
         `“${family.find((t) => t.id === op.taskId)?.title || stayed.title || 'A task'}” couldn't be moved because the list no longer exists.`,
