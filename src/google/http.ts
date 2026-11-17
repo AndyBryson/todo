@@ -11,7 +11,9 @@ import {
 } from './api';
 
 // Checked against live Google on 2026-11-17: tasks.move keeps the task ID and takes subtasks
-// with it; every Drive upload bumps the file version.
+// with it; every Drive upload bumps the file version; insert without `previous` puts the task
+// first; insert or move naming a deleted `previous` is a 404 ("Previous task id not found");
+// deleting a parent deletes its subtasks (they read back as deleted: true).
 const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
