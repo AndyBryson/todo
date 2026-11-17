@@ -228,7 +228,6 @@ export function buildBoard(
     Backlog: [],
     Next: [],
     Doing: [],
-    Waiting: [],
     Done: [],
   };
   const today = localDate(now);

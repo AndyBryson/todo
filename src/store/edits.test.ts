@@ -59,9 +59,9 @@ test('dragging to Done completes the task in Google and clears the pin', async (
 test('dragging out of Done reopens the task in Google', async () => {
   await store.commit({ putTasks: [task('x', { completed: true, completedAt: OLD_DONE })] });
   await store.commit({ replaceEntries: { x: entry({ column: 'Done', openColumn: 'Next' }) } });
-  await moveCard(store, 'x', 'Waiting', null, NOW);
+  await moveCard(store, 'x', 'Doing', null, NOW);
   const s = store.snapshot();
-  expect(s.entries.x).toMatchObject({ column: 'Waiting', openColumn: 'Waiting' });
+  expect(s.entries.x).toMatchObject({ column: 'Doing', openColumn: 'Doing' });
   expect(s.tasks.find((t) => t.id === 'x')).toMatchObject({ completed: false, completedAt: null });
   expect(await ops()).toEqual([
     {
@@ -288,15 +288,15 @@ describe('moving a card to the bottom of a column', () => {
 
   test('an empty column takes the card', async () => {
     await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
-    await moveCardToBottom(store, 'x', 'Waiting', NOW);
-    expect(store.snapshot().entries.x).toMatchObject({ column: 'Waiting', openColumn: 'Waiting' });
+    await moveCardToBottom(store, 'x', 'Doing', NOW);
+    expect(store.snapshot().entries.x).toMatchObject({ column: 'Doing', openColumn: 'Doing' });
   });
 
   test('from Done, reopens the task and places it in one write', async () => {
     await store.commit({
       putTasks: [task('x', { completed: true, completedAt: OLD_DONE }), task('a')],
       replaceEntries: {
-        x: entry({ column: 'Done', openColumn: 'Waiting' }),
+        x: entry({ column: 'Done', openColumn: 'Doing' }),
         a: entry({ column: 'Next', openColumn: 'Next', rank: 5000 }),
       },
     });
@@ -611,11 +611,11 @@ describe('moveCardsToBottom', () => {
       {
         a: entry({ column: 'Done', openColumn: 'Backlog', rank: 1 }),
         b: entry({ column: 'Done', openColumn: 'Doing', rank: 2 }),
-        w: entry({ column: 'Waiting', openColumn: 'Waiting', rank: 5 }),
+        w: entry({ column: 'Doing', openColumn: 'Doing', rank: 5 }),
       },
     );
-    await moveCardsToBottom(store, ['a', 'b'], 'Waiting', NOW);
-    expect(order('Waiting')).toEqual(['w', 'a', 'b']);
+    await moveCardsToBottom(store, ['a', 'b'], 'Doing', NOW);
+    expect(order('Doing')).toEqual(['w', 'a', 'b']);
     expect(store.snapshot().tasks.some((t) => t.completed)).toBe(false);
     expect(
       (await ops()).map((o) => (o.kind === 'patch' ? `${o.taskId}:${o.set.completed}` : o.kind)),

@@ -1,4 +1,4 @@
-export const COLUMNS = ['Backlog', 'Next', 'Doing', 'Waiting', 'Done'] as const;
+export const COLUMNS = ['Backlog', 'Next', 'Doing', 'Done'] as const;
 export type Column = (typeof COLUMNS)[number];
 export type OpenColumn = Exclude<Column, 'Done'>;
 export type LocalDate = string; // YYYY-MM-DD

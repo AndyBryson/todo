@@ -86,14 +86,14 @@ test('losing the write race re-reads and keeps both devices’ changes', async (
     // The fake closes over its board object, so mutate it rather than replace it.
     google.board.raw = file({
       a: entry(),
-      b: entry({ column: 'Waiting', openColumn: 'Waiting', rank: 2048, updatedAt: LATER }),
+      b: entry({ column: 'Doing', openColumn: 'Doing', rank: 2048, updatedAt: LATER }),
     });
     google.board.version += 1;
   });
   await pull(google, store, NOW);
   const remote = parseBoardFile(google.board.raw);
   expect(remote.a?.column).toBe('Next');
-  expect(remote.b?.column).toBe('Waiting');
+  expect(remote.b?.column).toBe('Doing');
   expect(google.calls.filter((c) => c.method === 'readBoard')).toHaveLength(2);
 });
 

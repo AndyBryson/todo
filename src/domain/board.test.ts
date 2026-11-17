@@ -81,11 +81,11 @@ describe('reconcile', () => {
 
   test('reopened in Google returns to its previous column at the bottom', () => {
     const entries = {
-      y: entry({ column: 'Waiting', rank: 9000 }),
-      x: entry({ column: 'Done', openColumn: 'Waiting' }),
+      y: entry({ column: 'Doing', rank: 9000 }),
+      x: entry({ column: 'Done', openColumn: 'Doing' }),
     };
     const out = reconcile([task('x'), task('y')], LISTS, entries, NOW);
-    expect(out.x?.column).toBe('Waiting');
+    expect(out.x?.column).toBe('Doing');
     expect(out.x?.rank).toBeGreaterThan(9000);
   });
 

@@ -1,6 +1,6 @@
 :root {
   /* Colourful lanes. White text on each column header is checked against WCAG AA (4.5:1):
-     backlog #646b72 5.4, next #4263eb 5.0, doing #b35c00 4.7, waiting #ae3ec9 4.9,
+     backlog #646b72 5.4, next #4263eb 5.0, doing #b35c00 4.7,
      done #237032 6.1 (the mockup's #868e96, #4c6ef5, #f08c00 and #2f9e44 failed). */
   --bg: #f2f4f8;
   --surface: #ffffff;
@@ -16,7 +16,6 @@
   --col-backlog: #646b72;
   --col-next: #4263eb;
   --col-doing: #b35c00;
-  --col-waiting: #ae3ec9;
   --col-done: #237032;
   --on-col: #ffffff;
   --shadow-1: 0 1px 2px rgb(20 30 60 / 0.06);
@@ -53,7 +52,6 @@
     --col-backlog: #4a5058;
     --col-next: #3a54c4;
     --col-doing: #9a4f00;
-    --col-waiting: #86309a;
     --col-done: #26743a;
     --on-col: #ffffff;
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
