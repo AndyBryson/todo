@@ -1,14 +1,6 @@
 import type { Card as CardData } from '../domain/board';
 import { localDate } from '../domain/dates';
-
-const dueFormat = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
-
-// UTC keeps the calendar date from shifting with the device's time zone.
-const formatDue = (due: string) => dueFormat.format(new Date(`${due}T00:00:00Z`));
+import { formatDue } from './dueFormat';
 
 interface Props {
   card: CardData;

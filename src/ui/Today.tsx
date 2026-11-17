@@ -1,0 +1,75 @@
+import { listColour } from '../domain/board';
+import { localDate } from '../domain/dates';
+import { todaySections } from '../domain/today';
+import type { Task } from '../domain/types';
+import type { Snapshot, Store } from '../store/db';
+import { addTask, setCompleted } from '../store/edits';
+import { openDetail } from './CardDetail';
+import { formatDue } from './dueFormat';
+import { QuickAdd } from './QuickAdd';
+
+interface Props {
+  store: Store;
+  snapshot: Snapshot;
+  act(fn: () => Promise<void>): Promise<boolean>;
+}
+
+export function Today({ store, snapshot, act }: Props) {
+  const now = new Date();
+  const today = localDate(now);
+  const { overdue, dueToday, pinned } = todaySections(snapshot.tasks, snapshot.entries, now);
+  const listTitle = new Map(snapshot.lists.map((l) => [l.id, l.title]));
+
+  const sections = [
+    { heading: 'Overdue', tasks: overdue },
+    { heading: 'Due today', tasks: dueToday },
+    { heading: 'Pinned', tasks: pinned },
+  ].filter((s) => s.tasks.length > 0);
+
+  const row = (t: Task) => (
+    <li class="today-row" key={t.id}>
+      <input
+        type="checkbox"
+        aria-label={`Complete “${t.title}”`}
+        checked={false}
+        onChange={() => void act(() => setCompleted(store, t.id, true, new Date().toISOString()))}
+      />
+      <button type="button" class="today-title" onClick={() => openDetail('today', t.id)}>
+        {t.title}
+      </button>
+      <span class="card-meta">
+        <span class="chip-static" style={{ '--chip': listColour(t.listId) }}>
+          <span class="dot" />
+          {listTitle.get(t.listId) ?? ''}
+        </span>
+        {t.due && (
+          <time class={t.due < today ? 'due overdue' : 'due'} dateTime={t.due}>
+            {formatDue(t.due)}
+          </time>
+        )}
+      </span>
+    </li>
+  );
+
+  return (
+    <div class="today">
+      <QuickAdd
+        lists={snapshot.lists}
+        defaultListId={snapshot.lastListId}
+        pinned={true}
+        onAdd={(input) =>
+          act(async () => {
+            await addTask(store, input, new Date().toISOString());
+          })
+        }
+      />
+      {sections.length === 0 && <p class="placeholder">Nothing due and nothing pinned.</p>}
+      {sections.map((s) => (
+        <section key={s.heading}>
+          <h2>{s.heading}</h2>
+          <ul class="today-list">{s.tasks.map(row)}</ul>
+        </section>
+      ))}
+    </div>
+  );
+}

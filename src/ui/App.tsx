@@ -7,6 +7,7 @@ import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
 import { useSnapshot, useSyncStatus } from './hooks';
 import { ListFilter } from './ListFilter';
+import { Today } from './Today';
 
 const FILTER_KEY = 'todo.filter';
 
@@ -123,7 +124,7 @@ export function App({ store, engine, auth }: Props) {
       <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
       <main class="main">
         {view === 'today' ? (
-          <p class="placeholder">Today view arrives in a later task.</p>
+          <Today store={store} snapshot={snapshot} act={act} />
         ) : (
           <Board store={store} snapshot={snapshot} filter={effectiveFilter} act={act} />
         )}
