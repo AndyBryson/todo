@@ -1,0 +1,33 @@
+{
+  "name": "todo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test"
+  },
+  "dependencies": {
+    "idb": "^8.0.4",
+    "preact": "^11.2.0",
+    "sortablejs": "^1.15.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/sortablejs": "^1.15.9",
+    "fake-indexeddb": "^6.2.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.0"
+  }
+}
