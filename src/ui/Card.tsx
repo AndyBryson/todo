@@ -42,7 +42,7 @@ export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu 
   };
 
   return (
-    <li class={selected ? 'card selected' : 'card'} data-id={task.id}>
+    <li class={selected ? 'card selected' : 'card'} data-id={task.id} style={{ '--list': colour }}>
       <button
         type="button"
         class="card-body"
@@ -75,10 +75,7 @@ export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu 
           {task.title}
         </span>
         <span class="card-meta">
-          <span class="chip-static" style={{ '--chip': colour }}>
-            <span class="dot" />
-            {list.title}
-          </span>
+          <span class="chip-static">{list.title}</span>
           {task.due && (
             <time class={overdue ? 'due overdue' : 'due'} dateTime={task.due}>
               {formatDue(task.due)}

@@ -132,7 +132,11 @@ export function Column({
   const allSelected = cards.length > 0 && cards.every((c) => selectedIds?.has(c.task.id));
 
   return (
-    <section class="column" aria-label={name}>
+    <section
+      class="column"
+      aria-label={name}
+      style={{ '--col': `var(--col-${name.toLowerCase()})` }}
+    >
       <h2>
         <span>
           {name} <span class="count">{cards.length}</span>

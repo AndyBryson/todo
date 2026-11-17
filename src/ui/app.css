@@ -1,30 +1,61 @@
 :root {
-  --bg: #f6f6f4;
+  /* Colourful lanes. White text on each column header is checked against WCAG AA (4.5:1):
+     backlog #646b72 5.4, next #4263eb 5.0, doing #b35c00 4.7, waiting #ae3ec9 4.9,
+     done #237032 6.1 (the mockup's #868e96, #4c6ef5, #f08c00 and #2f9e44 failed). */
+  --bg: #f2f4f8;
   --surface: #ffffff;
-  --text: #1c1c1a;
-  --muted: #6b6b66;
-  --border: #dcdcd6;
-  --accent: #2455d6;
+  --surface-2: #f6f7fb;
+  --text: #1d2433;
+  --muted: #5b6478;
+  --border: #e3e7ef;
+  --accent: #3b5bdb;
   --accent-text: #ffffff;
+  --accent-soft: #edf0ff;
+  --topbar: #3b5bdb;
+  --topbar-text: #ffffff;
+  --col-backlog: #646b72;
+  --col-next: #4263eb;
+  --col-doing: #b35c00;
+  --col-waiting: #ae3ec9;
+  --col-done: #237032;
+  --on-col: #ffffff;
+  --shadow-1: 0 1px 2px rgb(20 30 60 / 0.06);
+  --shadow-2: 0 1px 3px rgb(20 30 60 / 0.08), 0 6px 16px rgb(20 30 60 / 0.06);
+  --radius-panel: 12px;
+  --radius-card: 8px;
   --error: #b3261e;
   --priority-high: #c62828;
   --priority-low: #1565c0;
   --notice: #fff4d6;
   --bar-h: 3.2rem;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
   color: var(--text);
   background: var(--bg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #161615;
-    --surface: #212120;
-    --text: #ececea;
-    --muted: #9a9a94;
-    --border: #3a3a37;
-    --accent: #7ea2ff;
-    --accent-text: #101010;
+    /* Header shades are muted for dark mode; white text is 5.8:1 or better on each. */
+    --bg: #151821;
+    --surface: #1e2230;
+    --surface-2: #252a3a;
+    --text: #e7eaf3;
+    --muted: #9aa3b8;
+    --border: #323849;
+    --accent: #8ea2ff;
+    --accent-text: #10131c;
+    --accent-soft: #2a3152;
+    --topbar: #2b3d99;
+    --topbar-text: #ffffff;
+    --col-backlog: #4a5058;
+    --col-next: #3a54c4;
+    --col-doing: #9a4f00;
+    --col-waiting: #86309a;
+    --col-done: #26743a;
+    --on-col: #ffffff;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-2: 0 1px 3px rgb(0 0 0 / 0.35), 0 6px 16px rgb(0 0 0 / 0.3);
     --error: #ff8a80;
     --priority-high: #ff8a80;
     --priority-low: #8ab4ff;
@@ -49,8 +80,8 @@ button {
 }
 
 .header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--topbar);
+  color: var(--topbar-text);
 }
 
 .bar {
@@ -68,16 +99,17 @@ button {
 }
 
 .nav a {
-  padding: 0.4rem 0.75rem;
-  border-radius: 0.5rem;
-  color: var(--muted);
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  color: var(--topbar-text);
+  opacity: 0.8;
+  font-weight: 600;
   text-decoration: none;
 }
 
 .nav a[aria-current="page"] {
-  color: var(--text);
-  background: var(--bg);
-  font-weight: 600;
+  opacity: 1;
+  background: rgb(255 255 255 / 0.18);
 }
 
 .status {
@@ -86,7 +118,8 @@ button {
   align-items: center;
   gap: 0.25rem 0.75rem;
   font-size: 0.875rem;
-  color: var(--muted);
+  color: var(--topbar-text);
+  opacity: 0.9;
 }
 
 .queue {
@@ -153,7 +186,7 @@ button {
 .board {
   display: flex;
   align-items: stretch;
-  gap: 0.75rem;
+  gap: 0.9rem;
   overflow-x: auto;
   min-height: calc(100vh - 12rem);
 }
@@ -163,14 +196,22 @@ button {
   flex-direction: column;
   flex: 1 0 14rem;
   min-width: 14rem;
+  background: var(--surface);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
 }
 
 .column h2 {
   display: flex;
   justify-content: space-between;
-  margin: 0 0 0.5rem;
+  align-items: center;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
   font-size: 0.9rem;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--on-col);
+  background: var(--col, var(--col-backlog));
 }
 
 .count {
@@ -180,7 +221,7 @@ button {
 .cards {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.6rem;
   flex: 1;
   min-height: 4rem;
   display: flex;
@@ -192,7 +233,13 @@ button {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-left: 4px solid var(--list, var(--border));
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-2);
 }
 
 .card.sortable-ghost {
@@ -211,6 +258,8 @@ button {
 }
 
 .card-title {
+  font-size: 1rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -219,7 +268,7 @@ button {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.6rem;
-  font-size: 0.8rem;
+  font-size: 0.857rem;
   color: var(--muted);
 }
 
@@ -245,6 +294,10 @@ button {
   display: flex;
   gap: 0.4rem;
   margin-bottom: 0.5rem;
+}
+
+.column > .quick-add {
+  margin: 0.6rem 0.6rem 0;
 }
 
 .quick-add select {
@@ -578,7 +631,8 @@ button {
 .select-all {
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--on-col);
+  text-decoration: underline;
   font-size: 0.85rem;
   padding: 0;
 }
