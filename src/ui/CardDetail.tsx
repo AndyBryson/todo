@@ -46,13 +46,25 @@ interface FieldProps {
   label?: string;
   // Names the field when it sits inline without a visible label.
   ariaLabel?: string;
+  // A blank value is rejected by the caller, so the field must show the saved text again.
+  required?: boolean;
+  // Lets a caller find the control again after a re-render.
+  part?: string;
   saved: string;
   multiline?: boolean;
   onSave(value: string): void;
 }
 
 // The draft exists only while focused, so a background sync cannot overwrite typing.
-export function DraftField({ label, ariaLabel, saved, multiline, onSave }: FieldProps) {
+export function DraftField({
+  label,
+  ariaLabel,
+  required,
+  part,
+  saved,
+  multiline,
+  onSave,
+}: FieldProps) {
   const id = useId();
   const [draft, setDraftState] = useState<string | null>(null);
   // Refs let the unmount cleanup see the latest values; blur and cleanup share one flush.
@@ -74,12 +86,19 @@ export function DraftField({ label, ariaLabel, saved, multiline, onSave }: Field
   const shared = {
     id,
     'aria-label': ariaLabel,
+    'data-part': part,
     value: draft ?? saved,
     onFocus: () => setDraft(saved),
     onInput: (e: Event) => setDraft((e.target as HTMLInputElement | HTMLTextAreaElement).value),
-    onBlur: () => {
+    onBlur: (e: Event) => {
+      const el = e.target as HTMLInputElement | HTMLTextAreaElement;
+      const pending = draftRef.current;
       flush();
       setDraftState(null);
+      // Preact does not re-sync a controlled value whose prop is unchanged, so revert by hand.
+      if (pending !== null && (pending === latest.current.saved || (required && !pending.trim()))) {
+        el.value = latest.current.saved;
+      }
     },
   };
   return (
@@ -187,6 +206,7 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
 
       <DraftField
         label="Title"
+        required
         saved={task.title}
         onSave={(title) => {
           // A blank title is rejected, so it reverts to the saved one.

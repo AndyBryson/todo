@@ -73,13 +73,15 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
   };
 
   const add = async () => {
-    const title = draftRef.current;
-    if (!title.trim()) return;
-    if (await act(() => addSubtask(store, parent.id, title, new Date().toISOString()))) {
-      // Keep anything typed while the step was saving.
-      if (draftRef.current === title) {
-        draftRef.current = '';
-        setDraft('');
+    const title = draftRef.current.trim();
+    if (!title) return;
+    // Clear at once so quick typing starts the next step; restore only if the add fails.
+    draftRef.current = '';
+    setDraft('');
+    if (!(await act(() => addSubtask(store, parent.id, title, new Date().toISOString())))) {
+      if (draftRef.current === '') {
+        draftRef.current = title;
+        setDraft(title);
       }
     }
   };
@@ -115,6 +117,8 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
             />
             <DraftField
               ariaLabel={s.title}
+              part="text"
+              required
               saved={s.title}
               onSave={(title) => {
                 // A blank title is rejected, so it reverts to the saved one.
@@ -144,7 +148,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
           setDraft(e.currentTarget.value);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && !e.isComposing) {
             e.preventDefault();
             void add();
           }
