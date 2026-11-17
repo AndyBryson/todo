@@ -28,3 +28,10 @@ describe('card rank placement', () => {
     expect(new Set(ranks).size).toBe(ranks.length);
   });
 });
+
+test('a forced rebalance respaces every rank and leaves a slot at the index', () => {
+  expect(placeCard([1, 1, 1, 1], 2)).toEqual({
+    rank: 3072,
+    rebalanced: [1024, 2048, 4096, 5120],
+  });
+});

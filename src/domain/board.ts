@@ -1,4 +1,4 @@
-import { appendRank } from './rank';
+import { appendRank, placeCard } from './rank';
 import {
   type BoardEntries,
   type BoardEntry,
@@ -158,4 +158,104 @@ export function reconcile(
     }
   }
   return result;
+}
+
+export interface Card {
+  task: Task;
+  list: TaskList;
+  entry: BoardEntry;
+  colour: string;
+}
+
+const DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Chosen to stay legible on both light and dark backgrounds.
+const PALETTE = [
+  '#e5484d',
+  '#f76b15',
+  '#d6a100',
+  '#30a46c',
+  '#12a594',
+  '#0090ff',
+  '#6e56cf',
+  '#d6409f',
+] as const;
+
+// FNV-1a, 32-bit. A hash rather than list order, so a list keeps its colour when others are added.
+export function listColour(listId: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < listId.length; i++) {
+    hash ^= listId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return PALETTE[hash % PALETTE.length] as string;
+}
+
+export function buildBoard(
+  tasks: Task[],
+  lists: TaskList[],
+  entries: BoardEntries,
+  filter: ReadonlySet<string> | null,
+  now: Date,
+): Record<Column, Card[]> {
+  const board: Record<Column, Card[]> = {
+    Backlog: [],
+    Next: [],
+    Doing: [],
+    Waiting: [],
+    Done: [],
+  };
+  const doneSince = now.getTime() - DONE_WINDOW_MS;
+
+  for (const t of tasks) {
+    const e = entries[t.id];
+    const list = lists.find((l) => l.id === t.listId);
+    if (t.parent !== null || !e || !list) continue;
+    if (filter && !filter.has(t.listId)) continue;
+    if (e.column === 'Done' && Date.parse(t.completedAt ?? '') < doneSince) continue;
+    board[e.column].push({ task: t, list, entry: e, colour: listColour(t.listId) });
+  }
+
+  for (const column of COLUMNS) {
+    if (column === 'Done') {
+      board.Done.sort(
+        (a, b) => Date.parse(b.task.completedAt ?? '') - Date.parse(a.task.completedAt ?? ''),
+      );
+    } else {
+      board[column].sort((a, b) => a.entry.rank - b.entry.rank);
+    }
+  }
+  return board;
+}
+
+// Ranks are computed over the whole column, hidden lists included, so a filtered
+// drop never reshuffles cards the user cannot see.
+export function placeInColumn(
+  entries: BoardEntries,
+  taskId: string,
+  column: OpenColumn,
+  insertAfter: string | null,
+): BoardEntries {
+  const moved = entries[taskId];
+  if (!moved) return {};
+
+  const ids = Object.keys(entries)
+    .filter((id) => id !== taskId && entries[id]?.column === column)
+    .sort((a, b) => (entries[a]?.rank ?? 0) - (entries[b]?.rank ?? 0));
+  const after = insertAfter === null ? -1 : ids.indexOf(insertAfter);
+  const { rank, rebalanced } = placeCard(
+    ids.map((id) => entries[id]?.rank ?? 0),
+    after + 1,
+  );
+
+  const changes: BoardEntries = {
+    [taskId]: { ...moved, column, openColumn: column, rank },
+  };
+  if (rebalanced) {
+    ids.forEach((id, i) => {
+      const e = entries[id];
+      if (e) changes[id] = { ...e, rank: rebalanced[i] as number };
+    });
+  }
+  return changes;
 }

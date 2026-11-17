@@ -1,44 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import {
+  buildBoard,
   completeEntry,
+  listColour,
   mergeEntries,
   parseBoardFile,
+  placeInColumn,
   reconcile,
   reopenEntry,
   serialiseBoard,
 } from './board';
-import type { BoardEntry, Task, TaskList } from './types';
+import { entry, OLD, task } from './test-fixtures';
+import type { BoardEntries, Column, TaskList } from './types';
 
 const NOW = '2026-11-17T12:00:00Z';
-const OLD = '2026-11-01T00:00:00Z';
 const LISTS: TaskList[] = [{ id: 'L1', title: 'Home' }];
-
-function task(id: string, overrides: Partial<Task> = {}): Task {
-  return {
-    id,
-    listId: 'L1',
-    title: id,
-    notes: '',
-    due: null,
-    completed: false,
-    completedAt: null,
-    parent: null,
-    position: '0',
-    updated: OLD,
-    ...overrides,
-  };
-}
-
-function entry(overrides: Partial<BoardEntry> = {}): BoardEntry {
-  return {
-    column: 'Backlog',
-    rank: 1024,
-    pinned: false,
-    openColumn: 'Backlog',
-    updatedAt: OLD,
-    ...overrides,
-  };
-}
 
 describe('reconcile', () => {
   test('first run puts every open task in Backlog in Google order across lists', () => {
@@ -202,5 +178,111 @@ describe('parseBoardFile', () => {
   test('round-trips through serialiseBoard', () => {
     const entries = { a: entry({ column: 'Doing', pinned: true, openColumn: 'Next' }) };
     expect(parseBoardFile(serialiseBoard(entries))).toEqual(entries);
+  });
+});
+
+function orderOf(entries: BoardEntries, column: Column): string[] {
+  return Object.entries(entries)
+    .filter(([, e]) => e.column === column)
+    .sort(([, a], [, b]) => a.rank - b.rank)
+    .map(([id]) => id);
+}
+
+describe('buildBoard', () => {
+  const now = new Date('2026-11-17T12:00:00Z');
+
+  test('Done shows only the last 7 days, newest first', () => {
+    const tasks = [
+      task('old', { completed: true, completedAt: '2026-11-10T11:00:00Z' }),
+      task('a', { completed: true, completedAt: '2026-11-16T09:00:00Z' }),
+      task('b', { completed: true, completedAt: '2026-11-17T09:00:00Z' }),
+    ];
+    const entries = {
+      old: entry({ column: 'Done' }),
+      a: entry({ column: 'Done' }),
+      b: entry({ column: 'Done' }),
+    };
+    expect(buildBoard(tasks, LISTS, entries, null, now).Done.map((c) => c.task.id)).toEqual([
+      'b',
+      'a',
+    ]);
+  });
+
+  test('open columns are sorted by rank, and subtasks and entry-less tasks are left out', () => {
+    const tasks = [task('x'), task('y'), task('sub', { parent: 'x' }), task('bare')];
+    const entries = {
+      x: entry({ column: 'Next', rank: 2 }),
+      y: entry({ column: 'Next', rank: 1 }),
+      sub: entry({ column: 'Next', rank: 0 }),
+    };
+    expect(buildBoard(tasks, LISTS, entries, null, now).Next.map((c) => c.task.id)).toEqual([
+      'y',
+      'x',
+    ]);
+  });
+
+  test('filter keeps only chosen lists', () => {
+    const lists = [
+      { id: 'L1', title: 'Home' },
+      { id: 'L2', title: 'Work' },
+    ];
+    const tasks = [task('h', { listId: 'L1' }), task('w', { listId: 'L2' })];
+    const entries = { h: entry({ rank: 1 }), w: entry({ rank: 2 }) };
+    const board = buildBoard(tasks, lists, entries, new Set(['L2']), now);
+    expect(board.Backlog.map((c) => c.task.id)).toEqual(['w']);
+    expect(board.Backlog[0]?.list.title).toBe('Work');
+  });
+});
+
+describe('placeInColumn', () => {
+  test('dropping under a visible card skips hidden cards and leaves them in order', () => {
+    // Backlog order: v1(L1) h1(L2) h2(L2) v2(L1) m(L1). Filtered to L1, m is dropped right under v1.
+    const entries = {
+      v1: entry({ rank: 1 }),
+      h1: entry({ rank: 2 }),
+      h2: entry({ rank: 3 }),
+      v2: entry({ rank: 4 }),
+      m: entry({ rank: 5 }),
+    };
+    const merged = { ...entries, ...placeInColumn(entries, 'm', 'Backlog', 'v1') };
+    expect(orderOf(merged, 'Backlog')).toEqual(['v1', 'm', 'h1', 'h2', 'v2']);
+  });
+
+  test('a drop that forces a rebalance keeps hidden cards in order', () => {
+    const entries = {
+      v1: entry({ rank: 1 }),
+      h1: entry({ rank: 1 + 1e-9 }),
+      v2: entry({ rank: 3 }),
+      m: entry({ rank: 4 }),
+    };
+    const changes = placeInColumn(entries, 'm', 'Backlog', 'v1');
+    expect(Object.keys(changes).sort()).toEqual(['h1', 'm', 'v1', 'v2']);
+    const merged = { ...entries, ...changes };
+    expect(orderOf(merged, 'Backlog')).toEqual(['v1', 'm', 'h1', 'v2']);
+  });
+
+  test('null puts the card at the top, even from another column', () => {
+    const entries = {
+      a: entry({ column: 'Next', rank: 5 }),
+      m: entry({ column: 'Doing', rank: 1 }),
+    };
+    const changes = placeInColumn(entries, 'm', 'Next', null);
+    expect(Object.keys(changes)).toEqual(['m']);
+    expect(changes.m?.column).toBe('Next');
+    expect(orderOf({ ...entries, ...changes }, 'Next')).toEqual(['m', 'a']);
+  });
+
+  test('an insertAfter that is not in the column counts as the top', () => {
+    const entries = { a: entry({ rank: 5 }), m: entry({ column: 'Next', rank: 1 }) };
+    const merged = { ...entries, ...placeInColumn(entries, 'm', 'Backlog', 'ghost') };
+    expect(orderOf(merged, 'Backlog')).toEqual(['m', 'a']);
+  });
+});
+
+describe('listColour', () => {
+  test('is stable for an ID and differs between IDs', () => {
+    expect(listColour('MTIzNDU')).toBe(listColour('MTIzNDU'));
+    const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map(listColour));
+    expect(colours.size).toBeGreaterThan(1);
   });
 });
