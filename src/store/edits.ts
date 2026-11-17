@@ -215,13 +215,17 @@ export async function moveCardsToBottom(
     const moving = ids
       .flatMap((id) => {
         const entry = s.entries[id];
-        const known = s.tasks.some((t) => t.id === id);
-        return entry && known && entry.column !== column ? [{ id, entry }] : [];
+        const task = s.tasks.find((t) => t.id === id);
+        return entry && task && entry.column !== column ? [{ id, entry, task }] : [];
       })
+      // Keep the order the board shows: by rank in open columns, newest first in Done,
+      // where a rank is only what the card had in the column it came from.
       .sort(
         (a, b) =>
           COLUMNS.indexOf(a.entry.column) - COLUMNS.indexOf(b.entry.column) ||
-          a.entry.rank - b.entry.rank,
+          (a.entry.column === 'Done'
+            ? (b.task.completedAt ?? '').localeCompare(a.task.completedAt ?? '')
+            : a.entry.rank - b.entry.rank),
       );
 
     let working = s;

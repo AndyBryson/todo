@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
@@ -33,6 +33,7 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
   const [selected, setSelected] = useState(loadColumn);
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState(false);
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filter, now);
 
@@ -40,6 +41,17 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
   const visibleIds = new Set(COLUMNS.flatMap((c) => board[c].map((card) => card.task.id)));
   const chosen = [...picked].filter((id) => visibleIds.has(id));
   const chosenSet = new Set(chosen);
+
+  // Hidden or gone cards leave the selection for good, so widening the filter again
+  // doesn't quietly bring them back.
+  const visibleKey = [...visibleIds].sort().join(' ');
+  useEffect(() => {
+    const visible = new Set(visibleKey.split(' '));
+    setPicked((prev) => {
+      const kept = [...prev].filter((id) => visible.has(id));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [visibleKey]);
 
   function stopSelecting() {
     setSelecting(false);
@@ -70,9 +82,11 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
   }
 
   async function moveChosen(column: ColumnName) {
+    setBusy(true);
     const moved = await act(() =>
       moveCardsToBottom(store, chosen, column, new Date().toISOString()),
     );
+    setBusy(false);
     if (moved) stopSelecting();
   }
 
@@ -145,9 +159,10 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
           </Column>
         ))}
       </div>
-      {selecting && chosen.length > 0 && (
+      {selecting && (
         <SelectionBar
           count={chosen.length}
+          busy={busy}
           onMove={(column) => void moveChosen(column)}
           onCancel={stopSelecting}
         />

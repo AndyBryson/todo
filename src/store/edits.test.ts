@@ -592,6 +592,22 @@ describe('moveCardsToBottom', () => {
     ).toEqual(['a:false', 'b:false']);
   });
 
+  test('cards leaving Done keep the order Done shows them in, newest first', async () => {
+    await seed(
+      [
+        task('old', { completed: true, completedAt: '2026-11-15T09:00:00Z' }),
+        task('new', { completed: true, completedAt: '2026-11-16T09:00:00Z' }),
+      ],
+      {
+        // Ranks left over from different source columns say nothing about Done's order.
+        old: entry({ column: 'Done', openColumn: 'Backlog', rank: 1 }),
+        new: entry({ column: 'Done', openColumn: 'Doing', rank: 5 }),
+      },
+    );
+    await moveCardsToBottom(store, ['old', 'new'], 'Next', NOW);
+    expect(order('Next')).toEqual(['new', 'old']);
+  });
+
   test('an unknown or deleted id in the selection is skipped and the rest still move', async () => {
     await seed([task('a')], { a: entry({ column: 'Backlog', rank: 1 }) });
     await moveCardsToBottom(store, ['gone', 'a'], 'Next', NOW);

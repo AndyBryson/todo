@@ -1,12 +1,17 @@
+import { useState } from 'preact/hooks';
 import { COLUMNS, type Column } from '../domain/types';
 
 interface Props {
   count: number;
+  busy: boolean;
   onMove(column: Column): void;
   onCancel(): void;
 }
 
-export function SelectionBar({ count, onMove, onCancel }: Props) {
+// Choosing a column only picks it; the Move button commits. A select fires `change`
+// on arrow keys in some browsers, which must not move cards by itself.
+export function SelectionBar({ count, busy, onMove, onCancel }: Props) {
+  const [target, setTarget] = useState<Column | ''>('');
   return (
     <section class="selection-bar" aria-label="Selected cards">
       <span class="selection-count" aria-live="polite">
@@ -15,13 +20,8 @@ export function SelectionBar({ count, onMove, onCancel }: Props) {
       <label class="selection-move">
         Move to{' '}
         <select
-          value=""
-          disabled={count === 0}
-          onChange={(e) => {
-            const column = COLUMNS.find((c) => c === e.currentTarget.value);
-            e.currentTarget.value = '';
-            if (column) onMove(column);
-          }}
+          value={target}
+          onChange={(e) => setTarget(COLUMNS.find((c) => c === e.currentTarget.value) ?? '')}
         >
           <option value="" disabled>
             Column…
@@ -33,6 +33,13 @@ export function SelectionBar({ count, onMove, onCancel }: Props) {
           ))}
         </select>
       </label>
+      <button
+        type="button"
+        disabled={busy || count === 0 || target === ''}
+        onClick={() => target && onMove(target)}
+      >
+        Move
+      </button>
       <button type="button" onClick={onCancel}>
         Cancel
       </button>
