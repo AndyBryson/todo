@@ -82,11 +82,17 @@ test('Today leaves out tasks in hidden lists and hidden priorities', () => {
 });
 
 test('the planned-date filter never hides tasks on Today', () => {
-  const tasks = [task('late', { due: '2026-11-01' }), task('now', { due: '2026-11-17' })];
+  const tasks = [
+    task('late', { due: '2026-11-01' }),
+    task('now', { due: '2026-11-17' }),
+    task('far', { due: '2026-12-31' }),
+  ];
+  const entries = { late: entry(), now: entry(), far: entry({ pinned: true }) };
   const filters = { ...DEFAULT_FILTERS, planned: { on: true, days: 1 } };
-  const s = todaySections(tasks, { late: entry(), now: entry() }, NOW, filters, TZ);
+  const s = todaySections(tasks, entries, NOW, filters, TZ);
   expect(s.overdue.map((t) => t.id)).toEqual(['late']);
   expect(s.dueToday.map((t) => t.id)).toEqual(['now']);
+  expect(s.pinned.map((t) => t.id)).toEqual(['far']);
 });
 
 test('a task with no board entry counts as Medium', () => {
