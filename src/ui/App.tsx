@@ -130,6 +130,8 @@ export function App({ store, engine, auth }: Props) {
       </main>
       {taskId && (
         <CardDetail
+          key={taskId}
+          error={actionError}
           taskId={taskId}
           view={view}
           store={store}

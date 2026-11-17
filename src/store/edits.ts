@@ -8,9 +8,9 @@ import type { Change, Snapshot, Store } from './db';
 export function resolveId(s: Snapshot, taskId: string): string {
   let id = taskId;
   const seen = new Set<string>();
-  for (let next = s.renamed[id]; next !== undefined && !seen.has(id); next = s.renamed[id]) {
+  while (Object.hasOwn(s.renamed, id) && !seen.has(id)) {
     seen.add(id);
-    id = next;
+    id = s.renamed[id] as string;
   }
   return id;
 }
@@ -90,13 +90,12 @@ export async function editTask(
     const set: TaskPatch = {};
     const base: TaskPatch = {};
     for (const key of ['title', 'notes', 'due'] as const) {
-      if (input[key] === undefined) continue;
-      (set as Record<string, unknown>)[key] = input[key];
+      const value = key === 'title' ? input.title?.trim() : input[key];
+      if (value === undefined) continue;
+      if (key === 'title' && !value) throw new Error('A task needs a title');
+      if (value === task[key]) continue;
+      (set as Record<string, unknown>)[key] = value;
       (base as Record<string, unknown>)[key] = task[key];
-    }
-    if (set.title !== undefined) {
-      set.title = set.title.trim();
-      if (!set.title) throw new Error('A task needs a title');
     }
     if (Object.keys(set).length === 0) return {};
 
@@ -141,6 +140,27 @@ export async function setCompleted(
   );
 }
 
+function moveChange(
+  s: Snapshot,
+  taskId: string,
+  column: Column,
+  insertAfter: string | null,
+  now: string,
+): Change {
+  const task = requireTask(s, taskId);
+  const entry = requireEntry(s, taskId);
+
+  if (column === 'Done') {
+    return entry.column === 'Done' ? {} : completionChange(s, task, true, now);
+  }
+
+  // Reopen and placement go in one commit so the card never shows in its old column.
+  const reopen = entry.column === 'Done' ? completionChange(s, task, false, now) : {};
+  const entries = { ...s.entries, ...reopen.entries };
+  const placed = stamp(placeInColumn(entries, taskId, column, insertAfter), now);
+  return { ...reopen, entries: { ...reopen.entries, ...placed } };
+}
+
 export async function moveCard(
   store: Store,
   requestedId: string,
@@ -148,21 +168,31 @@ export async function moveCard(
   requestedAfter: string | null,
   now: string,
 ): Promise<void> {
+  await store.commit((s) =>
+    moveChange(
+      s,
+      resolveId(s, requestedId),
+      column,
+      requestedAfter === null ? null : resolveId(s, requestedAfter),
+      now,
+    ),
+  );
+}
+
+// The bottom is found inside the commit, so a stale view cannot drop the card at the top.
+export async function moveCardToBottom(
+  store: Store,
+  requestedId: string,
+  column: Column,
+  now: string,
+): Promise<void> {
   await store.commit((s) => {
     const taskId = resolveId(s, requestedId);
-    const insertAfter = requestedAfter === null ? null : resolveId(s, requestedAfter);
-    const task = requireTask(s, taskId);
-    const entry = requireEntry(s, taskId);
-
-    if (column === 'Done') {
-      return entry.column === 'Done' ? {} : completionChange(s, task, true, now);
-    }
-
-    // Reopen and placement go in one commit so the card never shows in its old column.
-    const reopen = entry.column === 'Done' ? completionChange(s, task, false, now) : {};
-    const entries = { ...s.entries, ...reopen.entries };
-    const placed = stamp(placeInColumn(entries, taskId, column, insertAfter), now);
-    return { ...reopen, entries: { ...reopen.entries, ...placed } };
+    const last = Object.entries(s.entries)
+      .filter(([id, e]) => id !== taskId && e.column === column)
+      .sort(([, a], [, b]) => a.rank - b.rank)
+      .at(-1);
+    return moveChange(s, taskId, column, last?.[0] ?? null, now);
   });
 }
 
