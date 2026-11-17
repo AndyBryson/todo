@@ -2,7 +2,7 @@ import { completeEntry, placeInColumn, reopenEntry } from '../domain/board';
 import { appendRank } from '../domain/rank';
 import type { BoardEntries, BoardEntry, Column, Task } from '../domain/types';
 import type { TaskPatch } from '../google/api';
-import type { Store } from './db';
+import type { Change, Store } from './db';
 
 function requireTask(store: Store, taskId: string): Task {
   const task = store.snapshot().tasks.find((t) => t.id === taskId);
@@ -35,44 +35,88 @@ export async function addTask(
     .filter((e) => e.column === 'Backlog')
     .map((e) => e.rank);
 
-  await store.putTask({
-    id,
-    listId: input.listId,
-    title,
-    notes: '',
-    due: null,
-    completed: false,
-    completedAt: null,
-    parent: null,
-    position: '', // Google assigns the real position on create
-    updated: now,
-  });
-  await store.patchEntries({
-    [id]: {
-      column: 'Backlog',
-      rank: appendRank(backlog),
-      pinned: input.pinned,
-      openColumn: 'Backlog',
-      updatedAt: now,
+  await store.commit({
+    putTasks: [
+      {
+        id,
+        listId: input.listId,
+        title,
+        notes: '',
+        due: null,
+        completed: false,
+        completedAt: null,
+        parent: null,
+        position: '', // Google assigns the real position on create
+        updated: now,
+      },
+    ],
+    entries: {
+      [id]: {
+        column: 'Backlog',
+        rank: appendRank(backlog),
+        pinned: input.pinned,
+        openColumn: 'Backlog',
+        updatedAt: now,
+      },
     },
+    enqueue: [{ kind: 'create', listId: input.listId, tempId: id, task: { title } }],
+    meta: { lastListId: input.listId },
   });
-  await store.enqueue({ kind: 'create', listId: input.listId, tempId: id, task: { title } });
-  await store.setMeta({ lastListId: input.listId });
   return id;
 }
 
 export async function editTask(
   store: Store,
   taskId: string,
-  set: Pick<TaskPatch, 'title' | 'notes' | 'due'>,
+  input: Pick<TaskPatch, 'title' | 'notes' | 'due'>,
 ): Promise<void> {
   const task = requireTask(store, taskId);
+  const set: TaskPatch = {};
   const base: TaskPatch = {};
-  for (const key of Object.keys(set) as (keyof typeof set)[]) {
+  for (const key of ['title', 'notes', 'due'] as const) {
+    if (input[key] === undefined) continue;
+    (set as Record<string, unknown>)[key] = input[key];
     (base as Record<string, unknown>)[key] = task[key];
   }
-  await store.putTask({ ...task, ...set });
-  await store.enqueue({ kind: 'patch', listId: task.listId, taskId, set, base });
+  if (set.title !== undefined) {
+    set.title = set.title.trim();
+    if (!set.title) throw new Error('A task needs a title');
+  }
+  if (Object.keys(set).length === 0) return;
+
+  await store.commit({
+    putTasks: [{ ...task, ...set } as Task],
+    enqueue: [{ kind: 'patch', listId: task.listId, taskId, set, base }],
+  });
+}
+
+function completionChange(
+  store: Store,
+  task: Task,
+  completed: boolean,
+  now: string,
+): Change | null {
+  if (task.completed === completed) return null;
+  const { entries } = store.snapshot();
+  const entry = entries[task.id];
+  let changed: BoardEntries | undefined;
+  if (entry) {
+    if (completed) changed = { [task.id]: completeEntry(entry, now) };
+    else if (entry.column === 'Done') changed = { [task.id]: reopenEntry(entry, entries, now) };
+  }
+  return {
+    putTasks: [{ ...task, completed, completedAt: completed ? now : null }],
+    entries: changed,
+    enqueue: [
+      {
+        kind: 'patch',
+        listId: task.listId,
+        taskId: task.id,
+        set: { completed },
+        base: { completed: task.completed },
+      },
+    ],
+  };
 }
 
 export async function setCompleted(
@@ -81,25 +125,8 @@ export async function setCompleted(
   completed: boolean,
   now: string,
 ): Promise<void> {
-  const task = requireTask(store, taskId);
-  await store.putTask({ ...task, completed, completedAt: completed ? now : null });
-
-  const { entries } = store.snapshot();
-  const entry = entries[taskId];
-  if (entry) {
-    if (completed) {
-      await store.patchEntries({ [taskId]: completeEntry(entry, now) });
-    } else if (entry.column === 'Done') {
-      await store.patchEntries({ [taskId]: reopenEntry(entry, entries, now) });
-    }
-  }
-  await store.enqueue({
-    kind: 'patch',
-    listId: task.listId,
-    taskId,
-    set: { completed },
-    base: { completed: task.completed },
-  });
+  const change = completionChange(store, requireTask(store, taskId), completed, now);
+  if (change) await store.commit(change);
 }
 
 export async function moveCard(
@@ -109,17 +136,19 @@ export async function moveCard(
   insertAfter: string | null,
   now: string,
 ): Promise<void> {
-  requireTask(store, taskId);
+  const task = requireTask(store, taskId);
   const entry = requireEntry(store, taskId);
 
   if (column === 'Done') {
     if (entry.column !== 'Done') await setCompleted(store, taskId, true, now);
     return;
   }
-  if (entry.column === 'Done') await setCompleted(store, taskId, false, now);
 
-  const changes = placeInColumn(store.snapshot().entries, taskId, column, insertAfter);
-  await store.patchEntries(stamp(changes, now));
+  // Reopen and placement go in one commit so the card never shows in its old column.
+  const reopen = entry.column === 'Done' ? completionChange(store, task, false, now) : null;
+  const entries = { ...store.snapshot().entries, ...reopen?.entries };
+  const placed = stamp(placeInColumn(entries, taskId, column, insertAfter), now);
+  await store.commit({ ...reopen, entries: { ...reopen?.entries, ...placed } });
 }
 
 export async function setPinned(
@@ -130,24 +159,28 @@ export async function setPinned(
 ): Promise<void> {
   requireTask(store, taskId);
   const entry = requireEntry(store, taskId);
-  await store.patchEntries({ [taskId]: { ...entry, pinned, updatedAt: now } });
+  await store.commit({ entries: { [taskId]: { ...entry, pinned, updatedAt: now } } });
 }
 
 export async function moveToList(store: Store, taskId: string, toListId: string): Promise<void> {
   const task = requireTask(store, taskId);
+  if (task.parent !== null) throw new Error('A subtask moves with its parent');
   if (task.listId === toListId) return;
 
   const family = store.snapshot().tasks.filter((t) => t.id === taskId || t.parent === taskId);
-  for (const t of family) await store.putTask({ ...t, listId: toListId });
-  await store.enqueue({ kind: 'move', listId: task.listId, taskId, toListId });
+  await store.commit({
+    putTasks: family.map((t) => ({ ...t, listId: toListId })),
+    enqueue: [{ kind: 'move', listId: task.listId, taskId, toListId }],
+  });
 }
 
 export async function deleteTask(store: Store, taskId: string): Promise<void> {
   const task = requireTask(store, taskId);
   const subtasks = store.snapshot().tasks.filter((t) => t.parent === taskId);
-  for (const t of subtasks) await store.removeTask(t.id);
-  await store.removeTask(taskId);
-  await store.patchEntries({}, [taskId]);
-  // Google deletes subtasks with their parent, so one op covers them all.
-  await store.enqueue({ kind: 'delete', listId: task.listId, taskId });
+  await store.commit({
+    removeTasks: [taskId, ...subtasks.map((t) => t.id)],
+    removeEntries: [taskId],
+    // Google deletes subtasks with their parent, so one op covers them all.
+    enqueue: [{ kind: 'delete', listId: task.listId, taskId }],
+  });
 }

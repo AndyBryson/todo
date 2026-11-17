@@ -1,9 +1,18 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { entry, task } from '../domain/test-fixtures';
 import { openStore, type Store } from './db';
-import { addTask, deleteTask, editTask, moveCard, moveToList } from './edits';
+import {
+  addTask,
+  deleteTask,
+  editTask,
+  moveCard,
+  moveToList,
+  setCompleted,
+  setPinned,
+} from './edits';
 
 const NOW = '2026-11-17T10:00:00Z';
+const OLD_DONE = '2026-11-10T00:00:00Z';
 let store: Store;
 let name: string;
 
@@ -54,8 +63,6 @@ test('dragging out of Done reopens the task in Google', async () => {
     },
   ]);
 });
-
-const OLD_DONE = '2026-11-10T00:00:00Z';
 
 test('moving between open columns places the card and queues nothing', async () => {
   await store.putTask(task('a'));
@@ -127,8 +134,80 @@ test('deleting removes the task, subtasks and card and queues one delete', async
   expect(await ops()).toEqual([{ kind: 'delete', listId: 'L1', taskId: 'x' }]);
 });
 
+test('editing ignores undefined keys, refuses a blank title and queues nothing when empty', async () => {
+  await editTask(store, 'x', { title: undefined });
+  expect(await ops()).toEqual([]);
+  await expect(editTask(store, 'x', { title: '  ' })).rejects.toThrow();
+  expect(await ops()).toEqual([]);
+});
+
+test('completing a subtask patches the task and has no card to move', async () => {
+  await store.putTask(task('sub', { parent: 'x' }));
+  await setCompleted(store, 'sub', true, NOW);
+  const s = store.snapshot();
+  expect(s.tasks.find((t) => t.id === 'sub')).toMatchObject({ completed: true, completedAt: NOW });
+  expect(s.entries).toEqual({});
+  expect(await ops()).toEqual([
+    {
+      kind: 'patch',
+      listId: 'L1',
+      taskId: 'sub',
+      set: { completed: true },
+      base: { completed: false },
+    },
+  ]);
+});
+
+test('completing an already completed task queues nothing', async () => {
+  await store.putTask(task('x', { completed: true, completedAt: OLD_DONE }));
+  await setCompleted(store, 'x', true, NOW);
+  expect(await ops()).toEqual([]);
+});
+
+test('pinning updates the card and queues nothing', async () => {
+  await store.setEntries({ x: entry() });
+  await setPinned(store, 'x', true, NOW);
+  expect(store.snapshot().entries.x).toMatchObject({ pinned: true, updatedAt: NOW });
+  expect(await ops()).toEqual([]);
+});
+
+test('a subtask cannot move list on its own', async () => {
+  await store.putTask(task('sub', { parent: 'x' }));
+  await expect(moveToList(store, 'sub', 'L2')).rejects.toThrow();
+});
+
+test('a failed write changes nothing, in memory or on disk', async () => {
+  const before = store.snapshot();
+  let calls = 0;
+  store.subscribe(() => calls++);
+  const unclonable = { ...task('bad'), title: () => 1 } as never;
+  await expect(
+    store.commit({
+      putTasks: [task('good'), unclonable],
+      entries: { good: entry() },
+      enqueue: [{ kind: 'delete', listId: 'L1', taskId: 'good' }],
+    }),
+  ).rejects.toThrow();
+  expect(store.snapshot()).toBe(before);
+  expect(calls).toBe(0);
+  const reopened = await openStore(name);
+  expect(reopened.snapshot().tasks.map((t) => t.id)).toEqual(['x']);
+  expect(reopened.snapshot().queueLength).toBe(0);
+});
+
+test('queued ops get increasing seqs even when enqueued together', async () => {
+  await Promise.all([
+    store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'a' }),
+    store.enqueue({ kind: 'delete', listId: 'L1', taskId: 'b' }),
+  ]);
+  const seqs = (await store.queue()).map((q) => q.seq);
+  expect(seqs[1]).toBeGreaterThan(seqs[0] as number);
+});
+
 describe('unknown ids', () => {
   test('every edit throws', async () => {
+    await expect(setCompleted(store, 'nope', true, NOW)).rejects.toThrow();
+    await expect(setPinned(store, 'nope', true, NOW)).rejects.toThrow();
     await expect(editTask(store, 'nope', { title: 'a' })).rejects.toThrow();
     await expect(moveCard(store, 'nope', 'Next', null, NOW)).rejects.toThrow();
     await expect(moveToList(store, 'nope', 'L2')).rejects.toThrow();
