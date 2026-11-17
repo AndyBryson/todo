@@ -9,7 +9,7 @@ On a phone the board shows one column at a time. Andy wants an optional overview
 ## Decisions (approved)
 
 - The phone switcher gets a **Stack** button, first in the row, before Backlog, Next, Doing and Done.
-- Stack shows **Doing, then Next, then Backlog**, stacked vertically at full length, each with its coloured header and count. Done is left out.
+- Stack shows **Doing, then Next, then Backlog, then Done**, stacked vertically at full length, each with its coloured header and count. (Done was left out at first; Andy asked for it after using the view.)
 - The whole page scrolls; nothing collapses.
 - Cards drag between the three sections as they do between columns on the desktop. An empty section keeps a small strip to drop into.
 - The choice is remembered per device like the column buttons (`todo.column`).

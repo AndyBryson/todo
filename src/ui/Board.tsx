@@ -23,10 +23,10 @@ interface Props {
 
 const COLUMN_KEY = 'todo.column';
 
-// The phone shows one column at a time, or Stack: the open work on one page,
-// most active first. Done stays out, as it only grows.
+// The phone shows one column at a time, or Stack: every column on one page,
+// most active first. Done goes last; it holds only the past week.
 type PhoneView = ColumnName | 'Stack';
-const STACK: ColumnName[] = ['Doing', 'Next', 'Backlog'];
+const STACK: ColumnName[] = ['Doing', 'Next', 'Backlog', 'Done'];
 
 function loadColumn(): PhoneView {
   try {
