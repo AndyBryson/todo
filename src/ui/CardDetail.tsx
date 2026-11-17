@@ -145,7 +145,7 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
   );
 
   if (!task) {
-    if (renamedTo) return shell(null);
+    if (renamedTo || deleted) return shell(null);
     return shell(
       <>
         <p>This task no longer exists.</p>
