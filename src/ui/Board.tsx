@@ -23,9 +23,15 @@ interface Props {
 
 const COLUMN_KEY = 'todo.column';
 
-function loadColumn(): ColumnName {
+// The phone shows one column at a time, or Stack: the open work on one page,
+// most active first. Done stays out, as it only grows.
+type PhoneView = ColumnName | 'Stack';
+const STACK: ColumnName[] = ['Doing', 'Next', 'Backlog'];
+
+function loadColumn(): PhoneView {
   try {
     const saved = localStorage.getItem(COLUMN_KEY);
+    if (saved === 'Stack') return 'Stack';
     return COLUMNS.find((c) => c === saved) ?? COLUMNS[0];
   } catch {
     return COLUMNS[0];
@@ -118,7 +124,7 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
   const onDrop = (d: Drop) =>
     void act(() => moveCard(store, d.taskId, d.column, d.insertAfter, new Date().toISOString()));
 
-  function select(name: ColumnName) {
+  function select(name: PhoneView) {
     setSelected(name);
     try {
       localStorage.setItem(COLUMN_KEY, name);
@@ -128,14 +134,23 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
   }
 
   // On a phone the sheet in the bottom bar replaces the Backlog quick add.
-  const visible = phone ? COLUMNS.filter((c) => c === selected) : COLUMNS;
+  const stacked = phone && selected === 'Stack';
+  const visible = !phone ? COLUMNS : stacked ? STACK : COLUMNS.filter((c) => c === selected);
 
   return (
     <>
-      <div class={phone ? 'board phone' : 'board'}>
+      <div class={stacked ? 'board phone stack' : phone ? 'board phone' : 'board'}>
         {phone && (
           <div class="phone-top">
             <div class="switcher">
+              <button
+                type="button"
+                aria-pressed={stacked}
+                style={{ '--col': 'var(--topbar)' }}
+                onClick={() => select('Stack')}
+              >
+                Stack
+              </button>
               {COLUMNS.map((name) => (
                 <button
                   key={name}

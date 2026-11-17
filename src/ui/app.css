@@ -521,14 +521,15 @@ textarea:hover {
 
 .switcher {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.25rem;
   overflow-x: auto;
   padding-bottom: 0.75rem;
 }
 
 .switcher button {
   flex: none;
-  padding: 0.4rem 0.85rem;
+  /* Tight enough for all five buttons on a 375 px phone; longer counts scroll the row. */
+  padding: 0.4rem 0.5rem;
   color: var(--col);
   font-weight: 600;
   background: var(--surface);
@@ -557,6 +558,15 @@ textarea:hover {
 .board.phone .column {
   flex: 1;
   min-width: 0;
+}
+
+/* Stacked sections take their natural height, so the page scrolls rather than each section. */
+.board.phone.stack {
+  gap: 0.75rem;
+}
+
+.board.phone.stack .column {
+  flex: none;
 }
 
 .phone-nav {
