@@ -172,7 +172,7 @@ export interface Card {
   steps: { done: number; total: number } | null;
 }
 
-// Done shows, and pull fetches, tasks completed within this window.
+// Done shows, and pull fetches, top-level tasks completed within this window.
 export const DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Chosen to stay legible on both light and dark backgrounds.

@@ -99,7 +99,9 @@ export function createFakeGoogle(seed?: {
           .filter(
             (t) =>
               t.listId === listId &&
-              (!t.completed || (t.completedAt !== null && t.completedAt >= completedSince)),
+              (!t.completed ||
+                t.parent !== null ||
+                (t.completedAt !== null && t.completedAt >= completedSince)),
           )
           .map((t) => ({ ...t }));
       });

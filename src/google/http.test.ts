@@ -31,6 +31,9 @@ const item = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+const doneItem = (id: string) =>
+  item(id, { status: 'completed', completed: '2026-11-16T09:00:00.000Z' });
+
 const api = (handler: Handler) => {
   const s = stub(handler);
   return { google: createHttpGoogle(async () => 't', s.fetchFn), ...s };
@@ -39,7 +42,8 @@ const api = (handler: Handler) => {
 describe('listTasks', () => {
   test('follows every page so a long list is never cut short', async () => {
     const { google, requests } = api((url) => {
-      if (url.searchParams.get('showCompleted') === 'true') return json({ items: [item('done')] });
+      if (url.searchParams.get('showCompleted') === 'true')
+        return json({ items: [doneItem('done')] });
       if (url.searchParams.get('pageToken') === 'p2') {
         return json({ items: Array.from({ length: 150 }, (_, i) => item(`b${i}`)) });
       }
@@ -58,8 +62,8 @@ describe('listTasks', () => {
     const { google } = api((url) => {
       if (url.searchParams.get('showCompleted') !== 'true') return json({});
       return url.searchParams.get('pageToken')
-        ? json({ items: [item('c2')] })
-        : json({ items: [item('c1')], nextPageToken: 'n' });
+        ? json({ items: [doneItem('c2')] })
+        : json({ items: [doneItem('c1')], nextPageToken: 'n' });
     });
     expect((await google.listTasks('L1', SINCE)).map((t) => t.id).sort()).toEqual(['c1', 'c2']);
   });
@@ -74,12 +78,32 @@ describe('listTasks', () => {
     expect(await google.listTasks('L1', SINCE)).toHaveLength(1);
   });
 
-  test('asks only for completed tasks since the cut-off, including hidden ones', async () => {
+  test('the completed query includes hidden tasks', async () => {
     const { google, requests } = api(() => json({}));
     await google.listTasks('L1', SINCE);
     const completed = requests.find((r) => r.url.searchParams.get('showCompleted') === 'true');
     expect(completed?.url.searchParams.get('showHidden')).toBe('true');
-    expect(completed?.url.searchParams.get('completedMin')).toBe(SINCE);
+  });
+
+  test('keeps completed subtasks of any age but top-level tasks only since the cut-off', async () => {
+    const old = '2026-10-01T09:00:00.000Z';
+    const recent = '2026-11-16T09:00:00.000Z';
+    const { google } = api((url) =>
+      url.searchParams.get('showCompleted') === 'true'
+        ? json({
+            items: [
+              item('oldStep', { status: 'completed', completed: old, parent: 'p' }),
+              item('oldTask', { status: 'completed', completed: old }),
+              item('newTask', { status: 'completed', completed: recent }),
+            ],
+          })
+        : json({ items: [item('p')] }),
+    );
+    expect((await google.listTasks('L1', SINCE)).map((t) => t.id).sort()).toEqual([
+      'newTask',
+      'oldStep',
+      'p',
+    ]);
   });
 
   test('maps Google’s due and status to calendar date and completed flag', async () => {

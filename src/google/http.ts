@@ -11,7 +11,7 @@ import {
 } from './api';
 
 // Checked against live Google on 2026-11-17: tasks.move keeps the task ID and takes subtasks
-// with it; completedMin returns completed tasks only; every Drive upload bumps the file version.
+// with it; every Drive upload bumps the file version.
 const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -142,13 +142,15 @@ export function createHttpGoogle(
     async listTasks(listId, completedSince) {
       const base = `${TASKS}/lists/${encodeURIComponent(listId)}/tasks`;
       const open = await pages<GoogleTask>(base, new URLSearchParams({ showCompleted: 'false' }));
-      const done = await pages<GoogleTask>(
+      // No completedMin: it would also drop old completed subtasks, which the step count needs.
+      const all = await pages<GoogleTask>(
         base,
-        new URLSearchParams({
-          showCompleted: 'true',
-          showHidden: 'true',
-          completedMin: completedSince,
-        }),
+        new URLSearchParams({ showCompleted: 'true', showHidden: 'true' }),
+      );
+      const done = all.filter(
+        (g) =>
+          g.status === 'completed' &&
+          (g.parent !== undefined || (g.completed ?? '') >= completedSince),
       );
       const byId = new Map<string, Task>();
       for (const g of [...open, ...done]) if (g.deleted !== true) byId.set(g.id, toTask(listId, g));

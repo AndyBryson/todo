@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest';
-import { parseBoardFile, serialiseBoard } from '../domain/board';
+import { buildBoard, parseBoardFile, serialiseBoard } from '../domain/board';
 import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
 import { OfflineError } from '../google/api';
@@ -202,4 +202,24 @@ test("Google's order replaces the local one after a pull", async () => {
   expect(local.map((t) => t.position)).toEqual(
     ['s3', 's2', 's1'].map((id) => google.tasks.get(id)?.position),
   );
+});
+
+test('a step ticked 30 days ago still counts on its card; an old top-level task does not show', async () => {
+  const longAgo = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  google = createFakeGoogle({
+    lists: LISTS,
+    tasks: [
+      task('p'),
+      task('s1', { parent: 'p', completed: true, completedAt: longAgo }),
+      task('s2', { parent: 'p' }),
+      task('old', { completed: true, completedAt: longAgo }),
+    ],
+    board: file({ p: entry() }),
+  });
+  await pull(google, store, NOW);
+  const { tasks, lists, entries } = store.snapshot();
+  expect(tasks.map((t) => t.id).sort()).toEqual(['p', 's1', 's2']);
+  const board = buildBoard(tasks, lists, entries, null, NOW);
+  expect(board.Backlog[0]?.steps).toEqual({ done: 1, total: 2 });
+  expect(board.Done).toEqual([]);
 });

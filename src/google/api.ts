@@ -18,7 +18,8 @@ export type TaskPatch = Partial<{
 
 export interface GoogleApi {
   listTaskLists(): Promise<TaskList[]>;
-  // Open tasks plus tasks completed since completedSince; hidden included; every page.
+  // Open tasks, top-level tasks completed since completedSince, and completed subtasks of any
+  // age so a card's step count stays right; hidden included; every page.
   listTasks(listId: string, completedSince: string): Promise<Task[]>;
   getTask(listId: string, taskId: string): Promise<Task>;
   insertTask(listId: string, task: NewTask): Promise<Task>;
