@@ -11,8 +11,9 @@ import {
   reopenEntry,
   serialiseBoard,
 } from './board';
+import { DEFAULT_FILTERS } from './filters';
 import { entry, OLD, task } from './test-fixtures';
-import type { BoardEntries, Column, TaskList } from './types';
+import type { BoardEntries, Column, Priority, TaskList } from './types';
 
 const NOW = '2026-11-17T12:00:00Z';
 const LISTS: TaskList[] = [{ id: 'L1', title: 'Home' }];
@@ -203,10 +204,9 @@ describe('buildBoard', () => {
       a: entry({ column: 'Done' }),
       b: entry({ column: 'Done' }),
     };
-    expect(buildBoard(tasks, LISTS, entries, null, now).Done.map((c) => c.task.id)).toEqual([
-      'b',
-      'a',
-    ]);
+    expect(
+      buildBoard(tasks, LISTS, entries, DEFAULT_FILTERS, now).Done.map((c) => c.task.id),
+    ).toEqual(['b', 'a']);
   });
 
   test('open columns are sorted by rank, and subtasks and entry-less tasks are left out', () => {
@@ -216,10 +216,9 @@ describe('buildBoard', () => {
       y: entry({ column: 'Next', rank: 1 }),
       sub: entry({ column: 'Next', rank: 0 }),
     };
-    expect(buildBoard(tasks, LISTS, entries, null, now).Next.map((c) => c.task.id)).toEqual([
-      'y',
-      'x',
-    ]);
+    expect(
+      buildBoard(tasks, LISTS, entries, DEFAULT_FILTERS, now).Next.map((c) => c.task.id),
+    ).toEqual(['y', 'x']);
   });
 
   test('filter keeps only chosen lists', () => {
@@ -229,9 +228,38 @@ describe('buildBoard', () => {
     ];
     const tasks = [task('h', { listId: 'L1' }), task('w', { listId: 'L2' })];
     const entries = { h: entry({ rank: 1 }), w: entry({ rank: 2 }) };
-    const board = buildBoard(tasks, lists, entries, new Set(['L2']), now);
+    const board = buildBoard(
+      tasks,
+      lists,
+      entries,
+      { ...DEFAULT_FILTERS, lists: new Set(['L2']) },
+      now,
+    );
     expect(board.Backlog.map((c) => c.task.id)).toEqual(['w']);
     expect(board.Backlog[0]?.list.title).toBe('Work');
+  });
+
+  test('buildBoard leaves out cards the filters hide', () => {
+    const tasks = [
+      task('keep', { due: '2026-11-18' }),
+      task('late', { due: '2026-12-31' }),
+      task('low'),
+      task('done', { completed: true, completedAt: '2026-11-16T09:00:00Z', due: '2026-12-31' }),
+    ];
+    const entries = {
+      keep: entry({ rank: 1 }),
+      late: entry({ rank: 2 }),
+      low: entry({ rank: 3, priority: 'low' }),
+      done: entry({ column: 'Done' }),
+    };
+    const filters = {
+      ...DEFAULT_FILTERS,
+      priorities: new Set<Priority>(['medium']),
+      planned: { on: true, days: 14 },
+    };
+    const board = buildBoard(tasks, LISTS, entries, filters, now);
+    expect(board.Backlog.map((c) => c.task.id)).toEqual(['keep']);
+    expect(board.Done.map((c) => c.task.id)).toEqual(['done']);
   });
 });
 
@@ -291,7 +319,7 @@ describe('listColour', () => {
 describe('step counts', () => {
   const entries: BoardEntries = { p: entry() };
   const cardFor = (tasks: ReturnType<typeof task>[]) =>
-    buildBoard(tasks, LISTS, entries, null, new Date(NOW)).Backlog[0];
+    buildBoard(tasks, LISTS, entries, DEFAULT_FILTERS, new Date(NOW)).Backlog[0];
 
   test('a card counts its done and total steps', () => {
     const card = cardFor([

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
+import { DEFAULT_FILTERS } from '../domain/filters';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
@@ -35,7 +36,8 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const now = new Date();
-  const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filter, now);
+  const filters = { ...DEFAULT_FILTERS, lists: filter };
+  const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
 
   // Cards hidden by the filter or gone after a sync drop out, so the count is what moves.
   const visibleIds = new Set(COLUMNS.flatMap((c) => board[c].map((card) => card.task.id)));

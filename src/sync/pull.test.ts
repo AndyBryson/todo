@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { buildBoard, parseBoardFile, serialiseBoard } from '../domain/board';
+import { DEFAULT_FILTERS } from '../domain/filters';
 import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
 import { OfflineError } from '../google/api';
@@ -219,7 +220,7 @@ test('a step ticked 30 days ago still counts on its card; an old top-level task 
   await pull(google, store, NOW);
   const { tasks, lists, entries } = store.snapshot();
   expect(tasks.map((t) => t.id).sort()).toEqual(['p', 's1', 's2']);
-  const board = buildBoard(tasks, lists, entries, null, NOW);
+  const board = buildBoard(tasks, lists, entries, DEFAULT_FILTERS, NOW);
   expect(board.Backlog[0]?.steps).toEqual({ done: 1, total: 2 });
   expect(board.Done).toEqual([]);
 });

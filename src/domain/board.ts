@@ -1,3 +1,5 @@
+import { localDate } from './dates';
+import { type BoardFilters, cardVisible } from './filters';
 import { appendRank, placeCard } from './rank';
 import { comparePosition } from './subtasks';
 import {
@@ -223,7 +225,7 @@ export function buildBoard(
   tasks: Task[],
   lists: TaskList[],
   entries: BoardEntries,
-  filter: ReadonlySet<string> | null,
+  filters: BoardFilters,
   now: Date,
 ): Record<Column, Card[]> {
   const board: Record<Column, Card[]> = {
@@ -233,6 +235,7 @@ export function buildBoard(
     Waiting: [],
     Done: [],
   };
+  const today = localDate(now);
   const doneSince = now.getTime() - DONE_WINDOW_MS;
   const stepCounts = new Map<string, { done: number; total: number }>();
   for (const t of tasks) {
@@ -247,7 +250,7 @@ export function buildBoard(
     const e = entries[t.id];
     const list = lists.find((l) => l.id === t.listId);
     if (t.parent !== null || !e || !list) continue;
-    if (filter && !filter.has(t.listId)) continue;
+    if (!cardVisible(t, e, filters, today)) continue;
     if (e.column === 'Done' && Date.parse(t.completedAt ?? '') < doneSince) continue;
     board[e.column].push({
       task: t,
