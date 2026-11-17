@@ -630,3 +630,10 @@ describe('moveCardsToBottom', () => {
     expect(await ops()).toEqual([]);
   });
 });
+
+test('entry priority and unknown fields survive a store round trip', async () => {
+  const e = { ...entry({ priority: 'high' }), extra: { colour: 'teal' } };
+  await store.commit({ entries: { x: e } });
+  const reopened = await openStore(name);
+  expect(reopened.snapshot().entries.x).toEqual(e);
+});

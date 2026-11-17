@@ -7,6 +7,8 @@ import {
   COLUMNS,
   type Column,
   type OpenColumn,
+  PRIORITIES,
+  type Priority,
   type Task,
   type TaskList,
 } from './types';
@@ -17,6 +19,16 @@ function isColumn(value: unknown): value is Column {
 
 function isOpenColumn(value: unknown): value is OpenColumn {
   return isColumn(value) && value !== 'Done';
+}
+
+const KNOWN_FIELDS = new Set(['column', 'rank', 'pinned', 'openColumn', 'updatedAt', 'priority']);
+
+function isStoredPriority(value: unknown): value is NonNullable<BoardEntry['priority']> {
+  return value !== 'medium' && PRIORITIES.includes(value as Priority);
+}
+
+export function priorityOf(entry: BoardEntry): Priority {
+  return entry.priority ?? 'medium';
 }
 
 function parseEntry(value: unknown): BoardEntry | null {
@@ -33,13 +45,18 @@ function parseEntry(value: unknown): BoardEntry | null {
   ) {
     return null;
   }
-  return {
+  const parsed: BoardEntry = {
     column: e.column,
     rank: e.rank,
     pinned: e.pinned,
     openColumn: e.openColumn,
     updatedAt: e.updatedAt,
   };
+  // A bad priority reads as Medium rather than rejecting the entry and losing its column.
+  if (isStoredPriority(e.priority)) parsed.priority = e.priority;
+  const extra = Object.fromEntries(Object.entries(e).filter(([key]) => !KNOWN_FIELDS.has(key)));
+  if (Object.keys(extra).length > 0) parsed.extra = extra;
+  return parsed;
 }
 
 // A damaged board.json must never block the app: bad data reads as "no
@@ -70,13 +87,18 @@ export function serialiseBoard(entries: BoardEntries): string {
   const sorted: BoardEntries = {};
   for (const id of Object.keys(entries).sort()) {
     const e = entries[id] as BoardEntry;
-    sorted[id] = {
+    const written: Record<string, unknown> = {
       column: e.column,
       rank: e.rank,
       pinned: e.pinned,
       openColumn: e.openColumn,
       updatedAt: e.updatedAt,
     };
+    if (e.priority) written.priority = e.priority;
+    for (const key of Object.keys(e.extra ?? {}).sort()) {
+      if (!KNOWN_FIELDS.has(key)) written[key] = e.extra?.[key];
+    }
+    sorted[id] = written as unknown as BoardEntry;
   }
   const file: BoardFile = { version: 1, entries: sorted };
   return JSON.stringify(file);

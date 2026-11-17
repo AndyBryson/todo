@@ -6,6 +6,7 @@ import {
   mergeEntries,
   parseBoardFile,
   placeInColumn,
+  priorityOf,
   reconcile,
   reopenEntry,
   serialiseBoard,
@@ -304,5 +305,89 @@ describe('step counts', () => {
 
   test('a card with no subtasks has no step count', () => {
     expect(cardFor([task('p')])?.steps).toBeNull();
+  });
+});
+
+describe('board file priority and unknown fields', () => {
+  // Captured from the serialiser before priority existed: devices compare this
+  // text to decide whether to rewrite board.json, so its format must not drift.
+  const EXISTING =
+    '{"version":1,"entries":{"a":{"column":"Backlog","rank":1024,"pinned":false,"openColumn":"Backlog","updatedAt":"2026-11-01T00:00:00Z"},"b":{"column":"Next","rank":1024,"pinned":false,"openColumn":"Next","updatedAt":"2026-11-01T00:00:00Z"}}}';
+
+  test('an existing board file reads and writes back byte for byte', () => {
+    expect(serialiseBoard(parseBoardFile(EXISTING))).toBe(EXISTING);
+    expect(serialiseBoard({ b: entry({ column: 'Next', openColumn: 'Next' }), a: entry() })).toBe(
+      EXISTING,
+    );
+  });
+
+  test('a priority round-trips', () => {
+    const out = parseBoardFile(serialiseBoard({ a: entry({ priority: 'low' }) }));
+    expect(out.a?.priority).toBe('low');
+    expect(priorityOf(out.a ?? entry())).toBe('low');
+  });
+
+  test('an unknown entry field survives parse, merge and serialise', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      entries: { a: { ...entry(), colour: 'teal', zeta: [1], alpha: { n: 1 } } },
+    });
+    const parsed = parseBoardFile(raw);
+    const merged = mergeEntries(parsed, {});
+    const written = JSON.parse(serialiseBoard(merged)).entries.a;
+    expect(written.colour).toBe('teal');
+    expect(written.zeta).toEqual([1]);
+    expect(Object.keys(written).slice(5)).toEqual(['alpha', 'colour', 'zeta']);
+  });
+
+  test('priority is written after the known fields and before unknown ones', () => {
+    const e = { ...entry({ priority: 'high' }), extra: { colour: 'teal' } };
+    const written = JSON.parse(serialiseBoard({ a: e })).entries.a;
+    expect(Object.keys(written)).toEqual([
+      'column',
+      'rank',
+      'pinned',
+      'openColumn',
+      'updatedAt',
+      'priority',
+      'colour',
+    ]);
+  });
+
+  test('an invalid or medium priority reads as Medium and keeps the entry', () => {
+    for (const bad of ['urgent', 'medium', 3, null]) {
+      const raw = JSON.stringify({ version: 1, entries: { a: { ...entry(), priority: bad } } });
+      const out = parseBoardFile(raw);
+      expect(out.a).toBeDefined();
+      expect(priorityOf(out.a ?? entry())).toBe('medium');
+      expect(serialiseBoard(out)).not.toContain('priority');
+    }
+  });
+
+  test('priority and unknown fields survive completing and reopening', () => {
+    const e = { ...entry({ column: 'Next', priority: 'highest' }), extra: { colour: 'teal' } };
+    const done = completeEntry(e, NOW);
+    expect(done.priority).toBe('highest');
+    expect(done.extra).toEqual({ colour: 'teal' });
+    const back = reopenEntry(done, { a: done }, NOW);
+    expect(back.priority).toBe('highest');
+    expect(back.extra).toEqual({ colour: 'teal' });
+  });
+
+  test('placing and reconciling keep priority and unknown fields', () => {
+    const e = { ...entry({ priority: 'lowest' }), extra: { colour: 'teal' } };
+    const placed = placeInColumn({ a: e }, 'a', 'Next', null).a;
+    expect(placed?.priority).toBe('lowest');
+    expect(placed?.extra).toEqual({ colour: 'teal' });
+    const out = reconcile([task('a', { completed: true, completedAt: NOW })], LISTS, { a: e }, NOW);
+    expect(out.a?.priority).toBe('lowest');
+    expect(out.a?.extra).toEqual({ colour: 'teal' });
+  });
+
+  test('a newer priority change on one device wins the merge', () => {
+    const local = { a: entry({ priority: 'low', updatedAt: '2026-11-02T00:00:00Z' }) };
+    const remote = { a: entry({ priority: 'high', updatedAt: '2026-11-03T00:00:00Z' }) };
+    expect(mergeEntries(local, remote).a?.priority).toBe('high');
+    expect(mergeEntries(remote, local).a?.priority).toBe('high');
   });
 });
