@@ -286,3 +286,23 @@ describe('listColour', () => {
     expect(colours.size).toBeGreaterThan(1);
   });
 });
+
+describe('step counts', () => {
+  const entries: BoardEntries = { p: entry() };
+  const cardFor = (tasks: ReturnType<typeof task>[]) =>
+    buildBoard(tasks, LISTS, entries, null, new Date(NOW)).Backlog[0];
+
+  test('a card counts its done and total steps', () => {
+    const card = cardFor([
+      task('p'),
+      task('s1', { parent: 'p', completed: true, completedAt: OLD }),
+      task('s2', { parent: 'p' }),
+      task('s3', { parent: 'p' }),
+    ]);
+    expect(card?.steps).toEqual({ done: 1, total: 3 });
+  });
+
+  test('a card with no subtasks has no step count', () => {
+    expect(cardFor([task('p')])?.steps).toBeNull();
+  });
+});

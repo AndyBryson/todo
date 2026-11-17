@@ -13,7 +13,8 @@ export type Op =
   | { kind: 'create'; listId: string; tempId: string; task: NewTask; attemptedAt?: string }
   | { kind: 'patch'; listId: string; taskId: string; set: TaskPatch; base: TaskPatch }
   | { kind: 'delete'; listId: string; taskId: string }
-  | { kind: 'move'; listId: string; taskId: string; toListId: string };
+  | { kind: 'move'; listId: string; taskId: string; toListId: string }
+  | { kind: 'reorder'; listId: string; taskId: string; parent: string; previous: string | null };
 
 export interface QueuedOp {
   seq: number;
@@ -59,6 +60,26 @@ export interface Change {
   renamed?: Record<string, string>;
 }
 
+// Rewrites every reference to fromId in one queued op, or returns null if it has none.
+function renameInOp(op: Op, fromId: string, toId: string): Op | null {
+  const swap = (id: string) => (id === fromId ? toId : id);
+  switch (op.kind) {
+    case 'create':
+      return op.task.parent === fromId ? { ...op, task: { ...op.task, parent: toId } } : null;
+    case 'reorder':
+      return op.taskId === fromId || op.parent === fromId || op.previous === fromId
+        ? {
+            ...op,
+            taskId: swap(op.taskId),
+            parent: swap(op.parent),
+            previous: op.previous === null ? null : swap(op.previous),
+          }
+        : null;
+    default:
+      return op.taskId === fromId ? { ...op, taskId: toId } : null;
+  }
+}
+
 // Moves a task, its subtasks, its board entry and its queued ops to a new ID.
 export function renameChange(s: Snapshot, fromId: string, toId: string): Change {
   const family = s.tasks.filter((t) => t.id === fromId || t.parent === fromId);
@@ -69,9 +90,10 @@ export function renameChange(s: Snapshot, fromId: string, toId: string): Change 
     entries: entry ? { [toId]: entry } : undefined,
     removeEntries: entry ? [fromId] : [],
     renamed: { [fromId]: toId },
-    requeue: s.queued
-      .filter((q) => q.op.kind !== 'create' && q.op.taskId === fromId)
-      .map((q) => ({ seq: q.seq, op: { ...q.op, taskId: toId } as Op })),
+    requeue: s.queued.flatMap((q) => {
+      const op = renameInOp(q.op, fromId, toId);
+      return op ? [{ seq: q.seq, op }] : [];
+    }),
   };
 }
 

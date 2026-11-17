@@ -1,5 +1,6 @@
 import { completeEntry, placeInColumn, ranksIn, reopenEntry } from '../domain/board';
 import { appendRank } from '../domain/rank';
+import { renumber, subtasksOf } from '../domain/subtasks';
 import type { BoardEntries, BoardEntry, Column, Task } from '../domain/types';
 import type { TaskPatch } from '../google/api';
 import type { Change, Snapshot, Store } from './db';
@@ -238,6 +239,94 @@ export async function deleteTask(store: Store, requestedId: string): Promise<voi
       removeEntries: [taskId],
       // Google deletes subtasks with their parent, so one op covers them all.
       enqueue: [{ kind: 'delete', listId: task.listId, taskId }],
+    };
+  });
+}
+
+// Positions are renumbered locally in the same commit as the op, so the new order
+// shows at once and never depends on Google answering first.
+export async function addSubtask(
+  store: Store,
+  requestedParentId: string,
+  title: string,
+  now: string,
+): Promise<string> {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error('A step needs a title');
+
+  const id = `local-${crypto.randomUUID()}`;
+  await store.commit((s) => {
+    const parent = requireTask(s, resolveId(s, requestedParentId));
+    if (parent.parent !== null) throw new Error('A step cannot have steps of its own');
+
+    const siblings = subtasksOf(s.tasks, parent.id);
+    const positions = renumber([...siblings.map((t) => t.id), id]);
+    return {
+      putTasks: [
+        ...siblings.map((t) => ({ ...t, position: positions[t.id] as string })),
+        {
+          id,
+          listId: parent.listId,
+          title: trimmed,
+          notes: '',
+          due: null,
+          completed: false,
+          completedAt: null,
+          parent: parent.id,
+          position: positions[id] as string,
+          updated: now,
+        },
+      ],
+      enqueue: [
+        {
+          kind: 'create',
+          listId: parent.listId,
+          tempId: id,
+          task: { title: trimmed, parent: parent.id },
+        },
+      ],
+    };
+  });
+  return id;
+}
+
+export async function reorderSubtask(
+  store: Store,
+  requestedId: string,
+  requestedPreviousId: string | null,
+  now: string,
+): Promise<void> {
+  await store.commit((s) => {
+    const taskId = resolveId(s, requestedId);
+    const previousId = requestedPreviousId === null ? null : resolveId(s, requestedPreviousId);
+    const task = requireTask(s, taskId);
+    const parentId = task.parent;
+    if (parentId === null) throw new Error('Only a step can be reordered');
+
+    const current = subtasksOf(s.tasks, parentId).map((t) => t.id);
+    if (previousId !== null && (previousId === taskId || !current.includes(previousId))) {
+      throw new Error(`${requestedPreviousId} is not a step beside ${requestedId}`);
+    }
+
+    const others = current.filter((id) => id !== taskId);
+    const at = previousId === null ? 0 : others.indexOf(previousId) + 1;
+    const next = [...others.slice(0, at), taskId, ...others.slice(at)];
+    if (next.every((id, i) => id === current[i])) return {};
+
+    const positions = renumber(next);
+    return {
+      putTasks: s.tasks
+        .filter((t) => t.parent === parentId)
+        .map((t) => ({ ...t, position: positions[t.id] as string, updated: now })),
+      enqueue: [
+        {
+          kind: 'reorder',
+          listId: task.listId,
+          taskId,
+          parent: parentId,
+          previous: previousId,
+        },
+      ],
     };
   });
 }

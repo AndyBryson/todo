@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, test } from 'vitest';
+import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
 import { openStore, renameChange, type Store } from './db';
 import {
+  addSubtask,
   addTask,
   deleteTask,
   editTask,
   moveCard,
   moveCardToBottom,
   moveToList,
+  reorderSubtask,
   setCompleted,
   setPinned,
 } from './edits';
@@ -388,5 +391,90 @@ describe('store', () => {
     expect(s.tasks.map((t) => t.id)).toEqual(['real']);
     expect(Object.keys(s.entries)).toEqual(['real']);
     expect(await ops()).toEqual([{ kind: 'delete', listId: 'L1', taskId: 'real' }]);
+  });
+});
+
+describe('steps', () => {
+  const pos = (n: number) => String(n).padStart(20, '0');
+  const titles = () => subtasksOf(store.snapshot().tasks, 'p').map((t) => t.title);
+
+  beforeEach(async () => {
+    await store.commit({
+      putTasks: [
+        task('p'),
+        task('s1', { parent: 'p', position: pos(0) }),
+        task('s2', { parent: 'p', position: pos(1) }),
+        task('s3', { parent: 'p', position: pos(2) }),
+      ],
+    });
+  });
+
+  test('a new step goes last under its parent and queues a create with the parent', async () => {
+    const id = await addSubtask(store, 'p', '  four  ', NOW);
+    const s = store.snapshot();
+    expect(id).toMatch(/^local-/);
+    expect(s.tasks.find((t) => t.id === id)).toMatchObject({
+      title: 'four',
+      listId: 'L1',
+      parent: 'p',
+      position: pos(3),
+    });
+    expect(s.entries[id]).toBeUndefined();
+    expect(subtasksOf(s.tasks, 'p').at(-1)?.id).toBe(id);
+    expect(await ops()).toEqual([
+      { kind: 'create', listId: 'L1', tempId: id, task: { title: 'four', parent: 'p' } },
+    ]);
+  });
+
+  test('steps typed quickly stay in the order they were typed', async () => {
+    const a = addSubtask(store, 'p', 'one', NOW);
+    const b = addSubtask(store, 'p', 'two', NOW);
+    await Promise.all([a, b]);
+    expect(titles()).toEqual(['s1', 's2', 's3', 'one', 'two']);
+  });
+
+  test('a blank step and a step under a subtask are refused', async () => {
+    await expect(addSubtask(store, 'p', '   ', NOW)).rejects.toThrow();
+    await expect(addSubtask(store, 's1', 'nested', NOW)).rejects.toThrow();
+    expect(await ops()).toEqual([]);
+  });
+
+  test('reordering a step queues parent and previous and shows the new order at once', async () => {
+    await reorderSubtask(store, 's3', 's1', NOW);
+    expect(titles()).toEqual(['s1', 's3', 's2']);
+    expect(await ops()).toEqual([
+      { kind: 'reorder', listId: 'L1', taskId: 's3', parent: 'p', previous: 's1' },
+    ]);
+  });
+
+  test('a step can be moved to the top', async () => {
+    await reorderSubtask(store, 's3', null, NOW);
+    expect(titles()).toEqual(['s3', 's1', 's2']);
+  });
+
+  test('moving a step to where it already is queues nothing', async () => {
+    await reorderSubtask(store, 's1', null, NOW);
+    await reorderSubtask(store, 's2', 's1', NOW);
+    expect(titles()).toEqual(['s1', 's2', 's3']);
+    expect(await ops()).toEqual([]);
+  });
+
+  test('reordering refuses a parent task and a previous step from elsewhere', async () => {
+    await store.commit({ putTasks: [task('q'), task('t1', { parent: 'q' })] });
+    await expect(reorderSubtask(store, 'p', null, NOW)).rejects.toThrow();
+    await expect(reorderSubtask(store, 's1', 't1', NOW)).rejects.toThrow();
+    expect(await ops()).toEqual([]);
+  });
+
+  test('renaming a parent also renames it in a queued step create and in a queued reorder', async () => {
+    await addSubtask(store, 'p', 'four', NOW);
+    await reorderSubtask(store, 's3', 's1', NOW);
+    await store.commit((s) => renameChange(s, 'p', 'real'));
+    const queued = await ops();
+    expect(queued[0]).toMatchObject({ kind: 'create', task: { parent: 'real' } });
+    expect(queued[1]).toMatchObject({ kind: 'reorder', parent: 'real', previous: 's1' });
+
+    await store.commit((s) => renameChange(s, 's1', 'real-s1'));
+    expect((await ops())[1]).toMatchObject({ previous: 'real-s1' });
   });
 });

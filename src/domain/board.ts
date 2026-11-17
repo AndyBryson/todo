@@ -178,6 +178,7 @@ export interface Card {
   list: TaskList;
   entry: BoardEntry;
   colour: string;
+  steps: { done: number; total: number } | null;
 }
 
 // Done shows, and pull fetches, tasks completed within this window.
@@ -220,6 +221,14 @@ export function buildBoard(
     Done: [],
   };
   const doneSince = now.getTime() - DONE_WINDOW_MS;
+  const stepCounts = new Map<string, { done: number; total: number }>();
+  for (const t of tasks) {
+    if (t.parent === null) continue;
+    const counts = stepCounts.get(t.parent) ?? { done: 0, total: 0 };
+    counts.total += 1;
+    if (t.completed) counts.done += 1;
+    stepCounts.set(t.parent, counts);
+  }
 
   for (const t of tasks) {
     const e = entries[t.id];
@@ -227,7 +236,13 @@ export function buildBoard(
     if (t.parent !== null || !e || !list) continue;
     if (filter && !filter.has(t.listId)) continue;
     if (e.column === 'Done' && Date.parse(t.completedAt ?? '') < doneSince) continue;
-    board[e.column].push({ task: t, list, entry: e, colour: listColour(t.listId) });
+    board[e.column].push({
+      task: t,
+      list,
+      entry: e,
+      colour: listColour(t.listId),
+      steps: stepCounts.get(t.id) ?? null,
+    });
   }
 
   for (const column of COLUMNS) {
