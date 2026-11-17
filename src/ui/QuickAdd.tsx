@@ -5,7 +5,8 @@ interface Props {
   lists: TaskList[];
   defaultListId: string | null;
   pinned: boolean;
-  onAdd(input: { listId: string; title: string; pinned: boolean }): void;
+  // Resolves true when the task was added, so a failed add keeps the typed title.
+  onAdd(input: { listId: string; title: string; pinned: boolean }): Promise<boolean>;
 }
 
 export function QuickAdd({ lists, defaultListId, pinned, onAdd }: Props) {
@@ -13,21 +14,21 @@ export function QuickAdd({ lists, defaultListId, pinned, onAdd }: Props) {
   const [title, setTitle] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
-  // A list picked by hand wins; otherwise follow the last used list as it changes.
-  const wanted = chosen ?? defaultListId;
-  const listId = lists.some((l) => l.id === wanted) ? wanted : (lists[0]?.id ?? null);
+  const has = (id: string | null) => id !== null && lists.some((l) => l.id === id);
+  const listId = has(chosen) ? chosen : has(defaultListId) ? defaultListId : (lists[0]?.id ?? null);
 
-  function submit(e: Event) {
+  async function submit(e: Event) {
     e.preventDefault();
     const text = title.trim();
     if (!text || !listId) return;
-    onAdd({ listId, title: text, pinned });
-    setTitle('');
-    input.current?.focus();
+    if (await onAdd({ listId, title: text, pinned })) {
+      setTitle('');
+      input.current?.focus();
+    }
   }
 
   return (
-    <form class="quick-add" onSubmit={submit}>
+    <form class="quick-add" onSubmit={(e) => void submit(e)}>
       <select
         aria-label="List"
         value={listId ?? ''}
@@ -43,7 +44,8 @@ export function QuickAdd({ lists, defaultListId, pinned, onAdd }: Props) {
         ref={input}
         type="text"
         aria-label="New task"
-        placeholder="Add a task"
+        placeholder={listId ? 'Add a task' : 'No lists yet'}
+        disabled={!listId}
         value={title}
         onInput={(e) => setTitle(e.currentTarget.value)}
       />

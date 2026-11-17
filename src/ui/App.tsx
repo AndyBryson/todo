@@ -60,14 +60,16 @@ export function App({ store, engine, auth }: Props) {
 
   // The one place an edit is paired with a sync request.
   const act = useCallback(
-    async (fn: () => Promise<void>) => {
+    async (fn: () => Promise<void>): Promise<boolean> => {
       try {
         await fn();
         clearTimeout(errorTimer.current);
         setActionError(null);
         engine.requestSync();
+        return true;
       } catch (e) {
         showError(e);
+        return false;
       }
     },
     [engine, showError],

@@ -9,7 +9,7 @@ interface Props {
   store: Store;
   snapshot: Snapshot;
   filter: ReadonlySet<string> | null;
-  act(fn: () => Promise<void>): Promise<void>;
+  act(fn: () => Promise<void>): Promise<boolean>;
 }
 
 const openTask = (id: string) => {
@@ -40,7 +40,7 @@ export function Board({ store, snapshot, filter, act }: Props) {
               defaultListId={snapshot.lastListId}
               pinned={false}
               onAdd={(input) =>
-                void act(async () => {
+                act(async () => {
                   await addTask(store, input, new Date().toISOString());
                 })
               }

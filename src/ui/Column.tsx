@@ -33,6 +33,9 @@ export function Column({ name, cards, now, onOpen, onDrop, children }: Props) {
       group: { name: 'board', put: true },
       // Done is a drop target only; position there means nothing.
       sort: name !== 'Done',
+      // Native drag does not start from a button in Firefox, so use the fallback everywhere.
+      forceFallback: true,
+      fallbackOnBody: true,
       animation: 150,
       delay: 300,
       delayOnTouchOnly: true,
