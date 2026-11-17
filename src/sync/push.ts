@@ -424,9 +424,16 @@ async function resolveMissingMove(
     return {
       dequeue: [head.seq],
       putTasks: family.map((t) => ({ ...t, listId: op.listId })),
-      // Later edits to the task or its subtasks were queued against the list it appeared to be in.
+      // Later edits to the task or its subtasks, and steps added to it, were queued against
+      // the list it appeared to be in.
       requeue: s.queued
-        .filter((q) => q.seq !== head.seq && q.op.kind !== 'create' && ids.has(q.op.taskId))
+        .filter(
+          (q) =>
+            q.seq !== head.seq &&
+            (q.op.kind === 'create'
+              ? q.op.task.parent !== undefined && ids.has(q.op.task.parent)
+              : ids.has(q.op.taskId)),
+        )
         .map((q) => ({ seq: q.seq, op: { ...q.op, listId: op.listId } as Op })),
       notices: [
         `“${family.find((t) => t.id === op.taskId)?.title || stayed.title || 'A task'}” couldn't be moved because the list no longer exists.`,

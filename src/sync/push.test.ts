@@ -260,6 +260,18 @@ test('edits to a subtask follow it back when its parent’s move to a deleted li
   ]);
 });
 
+test('a step added after its parent’s move to a deleted list is created in the old list', async () => {
+  await moveToList(store, 'x', 'L2');
+  await addSubtask(store, 'x', 'Step', NOW);
+  google.lists.splice(1, 1);
+  expect(await replay(google, store)).toBe('done');
+  const step = [...google.tasks.values()].find((t) => t.title === 'Step');
+  expect(step).toMatchObject({ listId: 'L1', parent: 'x' });
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    "“x” couldn't be moved because the list no longer exists.",
+  ]);
+});
+
 test('a move of a task deleted elsewhere drops it with a notice naming it', async () => {
   await store.commit({ replaceEntries: { x: entry({ column: 'Next', openColumn: 'Next' }) } });
   await moveToList(store, 'x', 'L2');
