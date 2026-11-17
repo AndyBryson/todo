@@ -19,6 +19,9 @@ interface Props {
   selecting: boolean;
   onSelecting(on: boolean): void;
   onOpenDrawer(): void;
+  // Desktop only: the sidebar is permanent there, so this shows or hides it.
+  sidebarOpen: boolean;
+  onToggleSidebar(): void;
 }
 
 const COLUMN_KEY = 'todo.column';
@@ -43,11 +46,15 @@ export function Board({
   selecting,
   onSelecting,
   onOpenDrawer,
+  sidebarOpen,
+  onToggleSidebar,
 }: Props) {
   const [selected, setSelected] = useState(loadColumn);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; touch: boolean } | null>(
+    null,
+  );
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
 
@@ -80,6 +87,12 @@ export function Board({
   const menuCard = menu
     ? COLUMNS.flatMap((c) => board[c]).find((c) => c.task.id === menu.id)
     : undefined;
+  // A card that left the board (sync, delete, filter) must not bring the menu back if it returns.
+  const menuGone = menu !== null && !menuCard;
+  useEffect(() => {
+    if (menuGone) setMenu(null);
+  }, [menuGone]);
+
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const stopSelecting = () => onSelecting(false);
@@ -133,6 +146,19 @@ export function Board({
 
   return (
     <>
+      {!phone && (
+        <div class="desktop-top">
+          <button
+            type="button"
+            class="menu-button"
+            aria-label="Lists and filters"
+            aria-expanded={sidebarOpen}
+            onClick={onToggleSidebar}
+          >
+            ☰
+          </button>
+        </div>
+      )}
       <div class={phone ? 'board phone' : 'board'}>
         {phone && (
           <div class="phone-top">
@@ -174,7 +200,7 @@ export function Board({
               selectedIds={chosenSet}
               onToggle={toggle}
               onSelectAll={selectAll}
-              onMenu={(id, x, y) => setMenu({ id, x, y })}
+              onMenu={(id, x, y, touch = false) => setMenu({ id, x, y, touch })}
             >
               {!phone && name === 'Backlog' && (
                 <QuickAdd
@@ -195,6 +221,7 @@ export function Board({
         <CardMenu
           key={menu.id}
           card={menuCard}
+          touch={menu.touch}
           x={menu.x}
           y={menu.y}
           onClose={closeMenu}

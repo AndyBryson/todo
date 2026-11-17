@@ -847,3 +847,7 @@ button {
   display: inline-block;
   width: 1rem;
 }
+
+.desktop-top {
+  margin-bottom: 0.5rem;
+}

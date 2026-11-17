@@ -20,7 +20,7 @@ interface Props {
   selecting?: boolean;
   selected?: boolean;
   onToggle?(id: string): void;
-  onMenu?(id: string, x: number, y: number): void;
+  onMenu?(id: string, x: number, y: number, touch?: boolean): void;
 }
 
 export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu }: Props) {

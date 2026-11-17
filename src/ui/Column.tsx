@@ -22,10 +22,8 @@ interface Props {
   selectedIds?: ReadonlySet<string>;
   onToggle?(id: string): void;
   onSelectAll?(column: ColumnName): void;
-  onMenu?(id: string, x: number, y: number): void;
+  onMenu?(id: string, x: number, y: number, touch?: boolean): void;
 }
-
-const HOLD_MS = 300;
 
 // Sortable's touch events are touches on older browsers and pointer events on newer ones.
 function touchPoint(e: Event | undefined): { x: number; y: number } | null {
@@ -61,14 +59,17 @@ export function Column({
     const el = list.current;
     if (!el) return;
     // A touch held past the drag delay and released without dragging opens the card menu.
-    let hold: { id: string; x: number; y: number; at: number; dragged: boolean } | null = null;
+    let hold: { id: string; x: number; y: number; dragged: boolean } | null = null;
     let menuOpenedAt = 0;
-    const release = (item: HTMLElement) => {
+    // Sortable only reports `choose` once its delay has passed, so reaching a release means the hold was long enough.
+    const release = (item: HTMLElement, cause: Event | undefined) => {
       const h = hold;
       hold = null;
-      if (!h || h.dragged || h.id !== item.dataset.id || Date.now() - h.at < HOLD_MS) return;
+      // A cancel means the browser took the touch over, for a scroll say.
+      if (cause?.type === 'pointercancel' || cause?.type === 'touchcancel') return;
+      if (!h || h.dragged || h.id !== item.dataset.id) return;
       menuOpenedAt = Date.now();
-      latest.current.onMenu?.(h.id, h.x, h.y);
+      latest.current.onMenu?.(h.id, h.x, h.y, true);
     };
     // The click that follows the release would otherwise open the card's detail panel.
     const swallowClick = (e: MouseEvent) => {
@@ -93,13 +94,13 @@ export function Column({
       onChoose(evt) {
         const point = touchPoint((evt as { originalEvent?: Event }).originalEvent);
         const id = evt.item.dataset.id;
-        hold = point && id ? { id, ...point, at: Date.now(), dragged: false } : null;
+        hold = point && id ? { id, ...point, dragged: false } : null;
       },
       onStart() {
         if (hold) hold.dragged = true;
       },
       onUnchoose(evt) {
-        release(evt.item);
+        release(evt.item, (evt as { originalEvent?: Event }).originalEvent);
       },
       onEnd(evt) {
         const { item, from, to, oldIndex, newIndex } = evt;

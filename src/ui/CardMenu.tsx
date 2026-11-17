@@ -13,18 +13,24 @@ interface Props {
   onClose(): void;
   act(fn: () => Promise<unknown>): Promise<boolean>;
   store: Store;
+  // Opened by a held finger: the release can still produce a click, which must not hit an item.
+  touch?: boolean;
 }
 
 type Group = 'priority' | 'move';
 
 const EDGE = 8;
+const GHOST_CLICK_MS = 500;
+// Keeps the first item out from under the finger that opened the menu.
+const TOUCH_OFFSET = 28;
 const label = (p: Priority) => p.charAt(0).toUpperCase() + p.slice(1);
 
-export function CardMenu({ card, x, y, onClose, act, store }: Props) {
+export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Props) {
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Group | null>(null);
   // Set when a key opens a group, so focus lands on its first item once it has rendered.
   const focusFirstOf = useRef<Group | null>(null);
+  const mountedAt = useRef(Date.now());
   const opener = useRef<Element | null>(document.activeElement);
   const { task, entry } = card;
   const now = () => new Date().toISOString();
@@ -46,10 +52,13 @@ export function CardMenu({ card, x, y, onClose, act, store }: Props) {
     const el = menu.current;
     if (!el) return;
     const left = Math.max(EDGE, Math.min(x, innerWidth - el.offsetWidth - EDGE));
-    const top = Math.max(EDGE, Math.min(y, innerHeight - el.offsetHeight - EDGE));
+    const top = Math.max(
+      EDGE,
+      Math.min(touch ? y + TOUCH_OFFSET : y, innerHeight - el.offsetHeight - EDGE),
+    );
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
-  }, [x, y, open]);
+  }, [x, y, open, touch]);
 
   useEffect(() => {
     items()[0]?.focus({ preventScroll: true });
@@ -124,8 +133,12 @@ export function CardMenu({ card, x, y, onClose, act, store }: Props) {
     }
   }
 
-  const run = (fn: () => Promise<unknown>) => {
+  const run = (fn: () => Promise<unknown>, keepFocus = false) => {
     onClose();
+    // The card stays on the board, so keyboard users land back on it.
+    if (keepFocus) {
+      document.querySelector<HTMLElement>(`[data-id="${task.id}"] button`)?.focus();
+    }
     void act(fn);
   };
 
@@ -143,6 +156,12 @@ export function CardMenu({ card, x, y, onClose, act, store }: Props) {
       class="card-menu"
       role="menu"
       aria-label={`Actions for ${task.title}`}
+      onClickCapture={(e) => {
+        if (touch && Date.now() - mountedAt.current < GHOST_CLICK_MS) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -175,7 +194,7 @@ export function CardMenu({ card, x, y, onClose, act, store }: Props) {
               type="button"
               role="menuitemradio"
               aria-checked={p === current}
-              onClick={() => run(() => setPriority(store, task.id, p, now()))}
+              onClick={() => run(() => setPriority(store, task.id, p, now()), true)}
             >
               <span class="mark" aria-hidden="true">
                 {p === current ? '✓' : ''}
@@ -220,7 +239,7 @@ export function CardMenu({ card, x, y, onClose, act, store }: Props) {
         <button
           type="button"
           role="menuitem"
-          onClick={() => run(() => setPinned(store, task.id, !entry.pinned, now()))}
+          onClick={() => run(() => setPinned(store, task.id, !entry.pinned, now()), true)}
         >
           {entry.pinned ? 'Unpin' : 'Pin to Today'}
         </button>

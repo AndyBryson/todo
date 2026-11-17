@@ -36,6 +36,7 @@ function saveFilter(filter: Set<string> | null) {
 
 const PRIORITIES_KEY = 'todo.priorities';
 const PLANNED_KEY = 'todo.planned';
+const SIDEBAR_KEY = 'todo.sidebar';
 
 function loadPriorities(): ReadonlySet<Priority> {
   try {
@@ -48,6 +49,14 @@ function loadPriorities(): ReadonlySet<Priority> {
     return valid.length === 0 && levels.length > 0 ? DEFAULT_FILTERS.priorities : new Set(valid);
   } catch {
     return DEFAULT_FILTERS.priorities;
+  }
+}
+
+function loadSidebar(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== 'closed';
+  } catch {
+    return true;
   }
 }
 
@@ -100,6 +109,7 @@ export function App({ store, engine, auth }: Props) {
   const [priorities, setPriorities] = useState(loadPriorities);
   const [planned, setPlanned] = useState(loadPlanned);
   const [selecting, setSelecting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -181,6 +191,16 @@ export function App({ store, engine, auth }: Props) {
     }
   }
 
+  function toggleSidebar() {
+    const next = !sidebarOpen;
+    setSidebarOpen(next);
+    try {
+      localStorage.setItem(SIDEBAR_KEY, next ? 'open' : 'closed');
+    } catch {
+      // Storage can be blocked; the choice then lasts for this visit only.
+    }
+  }
+
   function toggleSelect() {
     // The drawer would cover the cards that are about to become tappable.
     if (!selecting) setDrawerOpen(false);
@@ -216,7 +236,7 @@ export function App({ store, engine, auth }: Props) {
         onDismiss={(id) => void store.dismissNotice(id)}
       />
       <div class={view === 'board' && !phone ? 'with-sidebar' : undefined}>
-        {view === 'board' && !phone && <Sidebar {...sidebarProps} />}
+        {view === 'board' && !phone && sidebarOpen && <Sidebar {...sidebarProps} />}
         <main class="main">
           {view === 'today' ? (
             <Today store={store} snapshot={snapshot} phone={phone} act={act} />
@@ -230,6 +250,8 @@ export function App({ store, engine, auth }: Props) {
               selecting={selecting}
               onSelecting={setSelecting}
               onOpenDrawer={() => setDrawerOpen(true)}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={toggleSidebar}
             />
           )}
         </main>
