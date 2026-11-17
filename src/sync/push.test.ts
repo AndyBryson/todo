@@ -117,3 +117,71 @@ test('moving a task to another list is sent and the board card stays', async () 
   expect(google.tasks.get('x')?.listId).toBe('L2');
   expect(store.snapshot().entries.x?.column).toBe('Next');
 });
+
+test('a create whose response was lost is adopted on the next replay, not sent twice', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'Once', pinned: false }, NOW);
+  google.onAfter('insertTask', () => {
+    throw new OfflineError();
+  });
+  expect(await replay(google, store)).toBe('offline');
+  expect(await replay(google, store)).toBe('done');
+  const made = [...google.tasks.values()].filter((t) => t.title === 'Once');
+  expect(made).toHaveLength(1);
+  expect(store.snapshot().tasks.map((t) => t.id)).toContain(made[0]?.id);
+  expect(store.snapshot().tasks.map((t) => t.id)).not.toContain(id);
+});
+
+test('an edit made while the create is in flight targets the real ID', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
+  google.onAfter('insertTask', () => {
+    void editTask(store, id, { notes: 'late' });
+  });
+  expect(await replay(google, store)).toBe('done');
+  const real = [...google.tasks.values()].find((t) => t.title === 'New');
+  expect(real?.notes).toBe('late');
+  expect(await store.queue()).toEqual([]);
+});
+
+test('a lone create replaces the local copy with Google’s task', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'Solo', pinned: true }, NOW);
+  expect(await replay(google, store)).toBe('done');
+  const real = [...google.tasks.values()].find((t) => t.title === 'Solo');
+  const s = store.snapshot();
+  expect(s.tasks.find((t) => t.id === real?.id)).toEqual(real);
+  expect(s.tasks.find((t) => t.id === id)).toBeUndefined();
+  expect(s.entries[real?.id ?? '']?.pinned).toBe(true);
+});
+
+test('a create for a list that no longer exists is dropped with a notice', async () => {
+  const id = await addTask(store, { listId: 'L9', title: 'Orphan', pinned: false }, NOW);
+  expect(await replay(google, store)).toBe('done');
+  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().tasks.find((t) => t.id === id)).toBeUndefined();
+  expect(store.snapshot().entries[id]).toBeUndefined();
+  expect(store.snapshot().notices[0]?.text).toBe(
+    '“Orphan” was deleted elsewhere, so your change was dropped.',
+  );
+});
+
+test('a move whose response was lost is settled, not reported as a deletion', async () => {
+  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await moveToList(store, 'x', 'L2');
+  google.tasks.set('x', task('x', { listId: 'L2' }));
+  expect(await replay(google, store)).toBe('done');
+  const s = store.snapshot();
+  expect(s.notices).toEqual([]);
+  expect(s.entries.x?.column).toBe('Next');
+  expect(s.tasks.find((t) => t.id === 'x')?.listId).toBe('L2');
+});
+
+test('a move to a deleted list is dropped and the task goes back to its old list', async () => {
+  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await moveToList(store, 'x', 'L2');
+  google.lists.splice(1, 1);
+  expect(await replay(google, store)).toBe('done');
+  const s = store.snapshot();
+  expect(await store.queue()).toEqual([]);
+  expect(s.tasks.find((t) => t.id === 'x')?.listId).toBe('L1');
+  expect(s.entries.x?.column).toBe('Next');
+  expect(s.notices[0]?.text).toBe("“x” couldn't be moved because the list no longer exists.");
+});

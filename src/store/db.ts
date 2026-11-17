@@ -9,7 +9,8 @@ import type { BoardEntries, Task, TaskList } from '../domain/types';
 import type { NewTask, TaskPatch } from '../google/api';
 
 export type Op =
-  | { kind: 'create'; listId: string; tempId: string; task: NewTask }
+  // attemptedAt is set before the first insert, so a replay after a lost response can find the task it made.
+  | { kind: 'create'; listId: string; tempId: string; task: NewTask; attemptedAt?: string }
   | { kind: 'patch'; listId: string; taskId: string; set: TaskPatch; base: TaskPatch }
   | { kind: 'delete'; listId: string; taskId: string }
   | { kind: 'move'; listId: string; taskId: string; toListId: string };
