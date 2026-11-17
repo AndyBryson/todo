@@ -2,10 +2,11 @@ import { useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
-import { addTask, moveCard } from '../store/edits';
+import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
 import { openDetail } from './CardDetail';
 import { Column, type Drop } from './Column';
 import { QuickAdd } from './QuickAdd';
+import { SelectionBar } from './SelectionBar';
 
 interface Props {
   store: Store;
@@ -30,8 +31,50 @@ const openTask = (id: string) => openDetail('board', id);
 
 export function Board({ store, snapshot, filter, phone, act }: Props) {
   const [selected, setSelected] = useState(loadColumn);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filter, now);
+
+  // Cards hidden by the filter or gone after a sync drop out, so the count is what moves.
+  const visibleIds = new Set(COLUMNS.flatMap((c) => board[c].map((card) => card.task.id)));
+  const chosen = [...picked].filter((id) => visibleIds.has(id));
+  const chosenSet = new Set(chosen);
+
+  function stopSelecting() {
+    setSelecting(false);
+    setPicked(new Set());
+  }
+
+  // Updates build on the latest selection, so taps in quick succession all count.
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll(column: ColumnName) {
+    const ids = board[column].map((c) => c.task.id);
+    setPicked((prev) => {
+      const next = new Set(prev);
+      const all = ids.every((id) => next.has(id));
+      for (const id of ids) {
+        if (all) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  async function moveChosen(column: ColumnName) {
+    const moved = await act(() =>
+      moveCardsToBottom(store, chosen, column, new Date().toISOString()),
+    );
+    if (moved) stopSelecting();
+  }
 
   const onDrop = (d: Drop) =>
     void act(() => moveCard(store, d.taskId, d.column, d.insertAfter, new Date().toISOString()));
@@ -49,44 +92,66 @@ export function Board({ store, snapshot, filter, phone, act }: Props) {
   const visible = phone ? COLUMNS.filter((c) => c === selected) : COLUMNS;
 
   return (
-    <div class={phone ? 'board phone' : 'board'}>
-      {phone && (
-        <div class="switcher">
-          {COLUMNS.map((name) => (
-            <button
-              key={name}
-              type="button"
-              aria-pressed={name === selected}
-              onClick={() => select(name)}
-            >
-              {name} <span class="count">{board[name].length}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {visible.map((name) => (
-        <Column
-          key={name}
-          name={name}
-          cards={board[name]}
-          now={now}
-          onOpen={openTask}
-          onDrop={onDrop}
+    <>
+      <div class="board-toolbar">
+        <button
+          type="button"
+          aria-pressed={selecting}
+          onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
         >
-          {!phone && name === 'Backlog' && (
-            <QuickAdd
-              lists={snapshot.lists}
-              defaultListId={snapshot.lastListId}
-              pinned={false}
-              onAdd={(input) =>
-                act(async () => {
-                  await addTask(store, input, new Date().toISOString());
-                })
-              }
-            />
-          )}
-        </Column>
-      ))}
-    </div>
+          {selecting ? 'Cancel' : 'Select'}
+        </button>
+      </div>
+      <div class={phone ? 'board phone' : 'board'}>
+        {phone && (
+          <div class="switcher">
+            {COLUMNS.map((name) => (
+              <button
+                key={name}
+                type="button"
+                aria-pressed={name === selected}
+                onClick={() => select(name)}
+              >
+                {name} <span class="count">{board[name].length}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {visible.map((name) => (
+          <Column
+            key={name}
+            name={name}
+            cards={board[name]}
+            now={now}
+            onOpen={openTask}
+            onDrop={onDrop}
+            selecting={selecting}
+            selectedIds={chosenSet}
+            onToggle={toggle}
+            onSelectAll={selectAll}
+          >
+            {!phone && name === 'Backlog' && (
+              <QuickAdd
+                lists={snapshot.lists}
+                defaultListId={snapshot.lastListId}
+                pinned={false}
+                onAdd={(input) =>
+                  act(async () => {
+                    await addTask(store, input, new Date().toISOString());
+                  })
+                }
+              />
+            )}
+          </Column>
+        ))}
+      </div>
+      {selecting && chosen.length > 0 && (
+        <SelectionBar
+          count={chosen.length}
+          onMove={(column) => void moveChosen(column)}
+          onCancel={stopSelecting}
+        />
+      )}
+    </>
   );
 }

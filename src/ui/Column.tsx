@@ -18,10 +18,26 @@ interface Props {
   onOpen(id: string): void;
   onDrop(drop: Drop): void;
   children?: ComponentChildren;
+  selecting?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggle?(id: string): void;
+  onSelectAll?(column: ColumnName): void;
 }
 
-export function Column({ name, cards, now, onOpen, onDrop, children }: Props) {
+export function Column({
+  name,
+  cards,
+  now,
+  onOpen,
+  onDrop,
+  children,
+  selecting = false,
+  selectedIds,
+  onToggle,
+  onSelectAll,
+}: Props) {
   const list = useRef<HTMLUListElement>(null);
+  const sortableRef = useRef<Sortable | null>(null);
   // Sortable is created once, so its handlers read the latest props through this.
   const latest = useRef({ name, onDrop });
   latest.current = { name, onDrop };
@@ -53,18 +69,44 @@ export function Column({ name, cards, now, onOpen, onDrop, children }: Props) {
         latest.current.onDrop({ taskId, column: dropped, insertAfter });
       },
     });
-    return () => sortable.destroy();
+    sortableRef.current = sortable;
+    return () => {
+      sortable.destroy();
+      sortableRef.current = null;
+    };
   }, []);
+
+  // A stray drag while selecting would move one card on its own.
+  useEffect(() => {
+    sortableRef.current?.option('disabled', selecting);
+  }, [selecting]);
+
+  const allSelected = cards.length > 0 && cards.every((c) => selectedIds?.has(c.task.id));
 
   return (
     <section class="column" aria-label={name}>
       <h2>
-        {name} <span class="count">{cards.length}</span>
+        <span>
+          {name} <span class="count">{cards.length}</span>
+        </span>
+        {selecting && cards.length > 0 && (
+          <button type="button" class="select-all" onClick={() => onSelectAll?.(name)}>
+            {allSelected ? 'Select none' : 'Select all'}
+          </button>
+        )}
       </h2>
       {children}
       <ul class="cards" ref={list} data-column={name}>
         {cards.map((c) => (
-          <Card key={c.task.id} card={c} now={now} onOpen={onOpen} />
+          <Card
+            key={c.task.id}
+            card={c}
+            now={now}
+            onOpen={onOpen}
+            selecting={selecting}
+            selected={selectedIds?.has(c.task.id)}
+            onToggle={onToggle}
+          />
         ))}
       </ul>
     </section>
