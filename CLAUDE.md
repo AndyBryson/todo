@@ -53,4 +53,4 @@ Runtime dependencies are `preact`, `idb` and `sortablejs` only. Any new one need
 
 ## House style
 
-UK English and plain wording in UI copy, docs and comments. Due dates are calendar dates (`YYYY-MM-DD`), never converted through local time. `board.json` holds task IDs and board metadata only, never titles or notes.
+UK English and plain wording in UI copy, docs and comments. Due dates are calendar dates (`YYYY-MM-DD`), never converted through local time. Google's `due` field is the planned date, not a deadline (the Tasks API has no deadline field), so the UI calls it "Planned" and never "Due" or "Overdue"; code keeps the name `due`. `board.json` holds task IDs and board metadata only, never titles or notes.

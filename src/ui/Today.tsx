@@ -21,8 +21,8 @@ export function Today({ store, snapshot, phone, act }: Props) {
   const listTitle = new Map(snapshot.lists.map((l) => [l.id, l.title]));
 
   const sections = [
-    { heading: 'Overdue', tasks: overdue },
-    { heading: 'Due today', tasks: dueToday },
+    { heading: 'Planned earlier', tasks: overdue },
+    { heading: 'Planned for today', tasks: dueToday },
     { heading: 'Pinned', tasks: pinned },
   ].filter((s) => s.tasks.length > 0);
 
@@ -70,7 +70,7 @@ export function Today({ store, snapshot, phone, act }: Props) {
           }
         />
       )}
-      {sections.length === 0 && <p class="placeholder">Nothing due and nothing pinned.</p>}
+      {sections.length === 0 && <p class="placeholder">Nothing planned and nothing pinned.</p>}
       {sections.map((s) => (
         <section key={s.heading}>
           <h2>{s.heading}</h2>

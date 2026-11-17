@@ -200,7 +200,7 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
       />
 
       <div class="field">
-        <label for="detail-due">Due date</label>
+        <label for="detail-due">Planned date</label>
         <div class="row">
           <input
             id="detail-due"
