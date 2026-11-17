@@ -1,6 +1,6 @@
 # Manage lists, drop Waiting, Google Home tasks to Next: design
 
-Status: draft for approval. Date: 2026-11-17.
+Status: approved. Date: 2026-11-17.
 
 ## Intent
 
@@ -22,7 +22,6 @@ Andy wants to run his lists from the app instead of going to Google Tasks: creat
 
 - A delete that removes tasks without Andy seeing how many first.
 - Board entries being rebuilt from known fields only, or `board.json` holding list names.
-- A "Waiting" value left in old board data making a card lose its priority or pin.
 
 ## Approaches
 
@@ -41,14 +40,13 @@ Andy wants to run his lists from the app instead of going to Google Tasks: creat
 - **New list:** ticked in the list filter (shown), even when some lists are unticked. Deleted lists leave the filter set and stop being Quick add's remembered list. Lists created elsewhere keep today's behaviour.
 - **Names:** a blank name is refused; names are trimmed.
 - **Errors:** a failed create, rename or delete (offline included) shows a plain message and leaves things as they were; an in-place rename goes back to the old name. The controls are disabled while the browser reports it's offline.
-- **Old "Waiting" data (Andy: there are no Waiting cards, no migration needed; builder's call on the fallback):** an entry whose `column` or `openColumn` reads "Waiting" is read as Next, keeping its rank, priority, pin and `extra`, so nothing is lost. It is a read-time fallback only: the file is rewritten whenever the entry next changes.
+- **Old "Waiting" data (Andy's call):** there is nothing in Waiting, so no code handles it. Waiting is simply removed from the column list.
 - **Reopened old tasks:** a task completed more than 7 days ago and then reopened is "seen for the first time"; in My Tasks it now lands in Next (CLAUDE.md's runtime rule is updated to say so).
 
 ## Testing
 
 - Reconcile: a new task in the default list gets Next; a new task elsewhere gets Backlog; a new completed task in the default list still goes to Done; with no entries at all (first import), default-list tasks go to Backlog.
 - Deleting a list locally removes its tasks, entries and queued writes, and leaves other lists' queued writes alone.
-- Board parsing: a stored "Waiting" reads as Next with priority, pin and `extra` kept; output stays byte-stable.
 - The fake Google gains list create, rename and delete, and a default list, so the app runs with `?fake`.
 - Checked by hand: create, rename, delete (with the count, and cancel), My Tasks has no Delete, offline disables the controls, four columns on desktop and phone.
 
