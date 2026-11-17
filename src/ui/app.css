@@ -1031,23 +1031,6 @@ textarea:hover {
   min-width: 0;
 }
 
-.sidebar-lists .list-actions {
-  flex: none;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  color: var(--muted);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-card);
-}
-
-.sidebar-lists .list-actions:hover:not(:disabled),
-.sidebar-lists .list-actions:focus-visible {
-  color: var(--text);
-  background: var(--surface-2);
-}
-
 .sidebar-lists .new-list {
   flex: 1;
   padding: 0.35rem 0.5rem;

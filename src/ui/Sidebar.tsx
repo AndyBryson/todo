@@ -146,7 +146,10 @@ export function Sidebar({
             style={{ '--chip': listColour(list.id) }}
             onContextMenu={(e) => {
               e.preventDefault();
-              openMenu(list.id, e.clientX, e.clientY);
+              // The context-menu key reports no pointer position; open under the row instead.
+              const r = e.currentTarget.getBoundingClientRect();
+              const byKey = e.clientX === 0 && e.clientY === 0;
+              openMenu(list.id, byKey ? r.left : e.clientX, byKey ? r.bottom + 4 : e.clientY);
             }}
           >
             {renaming === list.id ? (
@@ -166,20 +169,6 @@ export function Sidebar({
                 {list.title}
               </label>
             )}
-            <button
-              type="button"
-              class="list-actions"
-              aria-label={`Actions for ${list.title}`}
-              aria-haspopup="menu"
-              disabled={!online}
-              title={offline}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                openMenu(list.id, r.left, r.bottom + 4);
-              }}
-            >
-              ⋯
-            </button>
             {menu?.id === list.id && (
               <ListMenu
                 x={menu.x}
