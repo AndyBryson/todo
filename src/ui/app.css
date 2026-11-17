@@ -86,7 +86,7 @@ button {
   outline-offset: 2px;
 }
 
-.header :focus-visible {
+.header .bar :focus-visible {
   outline-color: var(--topbar-text);
 }
 
@@ -141,14 +141,13 @@ textarea:hover {
   padding: 0.35rem 0.9rem;
   border-radius: 999px;
   color: var(--topbar-text);
-  opacity: 0.8;
   font-weight: 600;
   text-decoration: none;
 }
 
 .nav a[aria-current="page"] {
-  opacity: 1;
-  background: rgb(255 255 255 / 0.18);
+  color: var(--topbar);
+  background: var(--topbar-text);
 }
 
 .status {
@@ -168,6 +167,15 @@ textarea:hover {
 
 .error {
   color: var(--error);
+}
+
+/* On the indigo bar a red message would be unreadable, so it sits on a light pill. */
+.header .status .error {
+  padding: 0.15rem 0.6rem;
+  font-weight: 700;
+  color: var(--error);
+  background: var(--surface);
+  border-radius: 999px;
 }
 
 .primary {
@@ -194,6 +202,10 @@ textarea:hover {
 
 .notice {
   background: var(--notice);
+}
+
+.line.error {
+  color: var(--error);
 }
 
 .line button {
@@ -531,6 +543,13 @@ textarea:hover {
   background: var(--col);
 }
 
+@media (prefers-color-scheme: dark) {
+  /* The column shades are too dark to read as text on a dark surface; the border keeps the colour. */
+  .switcher button:not([aria-pressed="true"]) {
+    color: var(--text);
+  }
+}
+
 .board.phone {
   flex-direction: column;
   overflow-x: visible;
@@ -673,6 +692,11 @@ textarea:hover {
   .step {
     gap: 0.25rem;
   }
+}
+
+/* The accent ring disappears on the coloured column headers. */
+.column h2 .select-all:focus-visible {
+  outline-color: var(--on-col);
 }
 
 .select-all {
