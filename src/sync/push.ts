@@ -89,8 +89,7 @@ function dropOps(s: Snapshot, gone: Set<string>): Pick<Change, 'dequeue' | 'requ
 }
 
 // The nearest sibling before goneId in the local order that is still expected to exist
-// in Google by the time q runs. When goneId has already left the mirror, the op's own
-// task marks the place instead.
+// in Google by the time q runs.
 function fallbackPrevious(
   s: Snapshot,
   q: QueuedOp,
@@ -102,13 +101,27 @@ function fallbackPrevious(
   const createdLater = new Set(
     s.queued.flatMap((o) => (o.seq >= q.seq && o.op.kind === 'create' ? [o.op.tempId] : [])),
   );
+  return (
+    siblingsBefore(s, parent, goneId, self).find((id) => !gone.has(id) && !createdLater.has(id)) ??
+    null
+  );
+}
+
+// Siblings before `missing` in the local order, nearest first. When `missing` has
+// already left the mirror, the op's own task marks the place instead.
+function siblingsBefore(
+  s: Snapshot,
+  parent: string,
+  missing: string | null,
+  self: string,
+): string[] {
   const order = subtasksOf(s.tasks, parent).map((t) => t.id);
-  const at = order.includes(goneId) ? order.indexOf(goneId) : order.indexOf(self);
-  for (let i = at - 1; i >= 0; i--) {
-    const id = order[i] as string;
-    if (id !== self && !gone.has(id) && !createdLater.has(id)) return id;
-  }
-  return null;
+  const at =
+    missing !== null && order.includes(missing) ? order.indexOf(missing) : order.indexOf(self);
+  return order
+    .slice(0, Math.max(at, 0))
+    .reverse()
+    .filter((id) => id !== self);
 }
 
 async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<void> {
@@ -194,7 +207,13 @@ async function runReorder(
       op.previous,
       op.taskId,
     );
-    result = await google.reorderTask(op.listId, op.taskId, op.parent, previous);
+    try {
+      result = await google.reorderTask(op.listId, op.taskId, op.parent, previous);
+    } catch (retryError) {
+      if (!(retryError instanceof NotFoundError)) throw retryError;
+      await store.commit((s) => dropDeleted(s, op.taskId));
+      return;
+    }
   }
   await store.commit((s) => settle(s, head.seq, op.taskId, result));
 }
@@ -220,12 +239,8 @@ async function survivingPrevious(
 ): Promise<string | null> {
   const s = store.snapshot();
   const unsent = new Set(s.queued.flatMap((q) => (q.op.kind === 'create' ? [q.op.tempId] : [])));
-  const order = subtasksOf(s.tasks, parent).map((t) => t.id);
-  const at =
-    missing !== null && order.includes(missing) ? order.indexOf(missing) : order.indexOf(self);
-  for (let i = at - 1; i >= 0; i--) {
-    const id = order[i] as string;
-    if (id === self || unsent.has(id)) continue;
+  for (const id of siblingsBefore(s, parent, missing, self)) {
+    if (unsent.has(id)) continue;
     if ((await findTask(google, listId, id))?.parent === parent) return id;
   }
   return null;
@@ -249,8 +264,13 @@ function dropRefused(s: Snapshot, head: QueuedOp, status: number): Change {
     s.tasks.find((t) => t.id === id)?.title ||
     (head.op.kind === 'create' ? head.op.task.title : '') ||
     'A task';
+  // A refused create never exists in Google, so its steps' ops go with it.
+  const dropped =
+    head.op.kind === 'create'
+      ? dropOps(s, new Set([id]))
+      : { dequeue: s.queued.some((q) => q.seq === head.seq) ? [head.seq] : [] };
   return {
-    dequeue: s.queued.some((q) => q.seq === head.seq) ? [head.seq] : [],
+    ...dropped,
     notices: [`Google refused a change to “${title}” (error ${status}), so it was dropped.`],
   };
 }
@@ -297,7 +317,14 @@ function settle(s: Snapshot, seq: number, localId: string, result: Task): Change
   const renamed: Change = result.id === localId ? {} : renameChange(s, localId, result.id);
   const stillQueued = s.queued.some((q) => q.seq !== seq && idOf(q.op) === localId);
   const putTasks = [...(renamed.putTasks ?? [])];
-  if (!stillQueued) putTasks.push(result);
+  // Local edits renumber every step, and Google's widely spaced position for this one
+  // would sort it away from its siblings until the next pull.
+  const local = s.tasks.find((t) => t.id === localId);
+  if (!stillQueued) {
+    putTasks.push(
+      result.parent !== null && local ? { ...result, position: local.position } : result,
+    );
+  }
   return { ...renamed, putTasks: putTasks.length ? putTasks : undefined, dequeue: [seq] };
 }
 
@@ -351,7 +378,7 @@ async function createInGoogle(
     const { parent } = op.task;
     if (!(await findTask(google, op.listId, parent))) {
       if (!(await google.listTaskLists()).some((l) => l.id === op.listId)) throw error;
-      await store.commit((s) => dropDeleted(s, op.tempId));
+      await store.commit((s) => dropDeleted(s, parent));
       return null;
     }
     const previous = await survivingPrevious(
@@ -362,7 +389,13 @@ async function createInGoogle(
       op.task.previous ?? null,
       op.tempId,
     );
-    return google.insertTask(op.listId, { ...op.task, previous: previous ?? undefined });
+    try {
+      return await google.insertTask(op.listId, { ...op.task, previous: previous ?? undefined });
+    } catch (retryError) {
+      if (!(retryError instanceof NotFoundError)) throw retryError;
+      await store.commit((s) => dropDeleted(s, op.tempId));
+      return null;
+    }
   }
 }
 

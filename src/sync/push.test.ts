@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
+import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
-import { AuthError, HttpError, OfflineError } from '../google/api';
+import { AuthError, HttpError, NotFoundError, OfflineError } from '../google/api';
 import { createFakeGoogle, type FakeGoogle, fakePosition } from '../google/fake';
 import { type Op, openStore, type Store } from '../store/db';
 import {
@@ -359,14 +360,16 @@ test('a reorder of a step deleted elsewhere is dropped with a notice', async () 
 
 test('a step whose parent was deleted elsewhere is dropped with a notice, and sync carries on', async () => {
   const stepId = await addSubtask(store, 'x', 'Step', NOW);
+  await addSubtask(store, 'x', 'Another', NOW);
   await editTask(store, 'y', { title: 'Later' });
   google.tasks.delete('x');
   expect(await replay(google, store)).toBe('done');
   const s = store.snapshot();
   expect(s.queued).toEqual([]);
   expect(s.tasks.find((t) => t.id === stepId)).toBeUndefined();
+  expect(s.tasks.find((t) => t.id === 'x')).toBeUndefined();
   expect(s.notices.map((n) => n.text)).toEqual([
-    '“Step” was deleted elsewhere, so your change was dropped.',
+    '“x” was deleted elsewhere, so your change was dropped.',
   ]);
   expect(google.tasks.get('y')?.title).toBe('Later');
 });
@@ -451,4 +454,71 @@ test('a reorder naming a step deleted elsewhere as previous falls back without a
 test('an op of an unknown kind stops replay with an error instead of looping', async () => {
   await store.commit({ enqueue: [{ kind: 'unknown' } as unknown as Op] });
   expect(await replay(google, store)).toBe('error');
+});
+
+const SPACING = 2 ** 30;
+
+// Real Google positions are widely spaced, unlike the local renumbering.
+async function seedSpacedSteps(...ids: string[]) {
+  const tasks = [
+    ...['x', 'y', 'z'].map((id) => task(id)),
+    ...ids.map((id, i) => task(id, { parent: 'x', position: fakePosition(BigInt(i * SPACING)) })),
+  ];
+  google = createFakeGoogle({ lists: LISTS, tasks, positionSpacing: SPACING });
+  await store.commit({ replaceRemote: { lists: LISTS, tasks } });
+}
+
+const localSteps = () => subtasksOf(store.snapshot().tasks, 'x').map((t) => t.title);
+
+test('a reorder keeps the local step order once Google confirms it', async () => {
+  await seedSpacedSteps('s1', 's2', 's3');
+  await reorderSubtask(store, 's1', 's2', NOW);
+  expect(await replay(google, store)).toBe('done');
+  expect(stepsInGoogle('x')).toEqual(['s2', 's1', 's3']);
+  expect(localSteps()).toEqual(['s2', 's1', 's3']);
+});
+
+test('editing a step after the steps were renumbered keeps it in place', async () => {
+  await seedSpacedSteps('s1', 's2', 's3');
+  await addSubtask(store, 'x', 'New', NOW);
+  expect(await replay(google, store)).toBe('done');
+  await editTask(store, 's2', { title: 'Two' });
+  expect(await replay(google, store)).toBe('done');
+  expect(localSteps()).toEqual(['s1', 'Two', 's3', 'New']);
+});
+
+test('a step create that misses again on its retry is dropped as deleted elsewhere', async () => {
+  await seedSteps('s1');
+  await addSubtask(store, 'x', 'Step', NOW);
+  google.failOn('insertTask', new NotFoundError('gone'), { times: 2 });
+  expect(await replay(google, store)).toBe('done');
+  expect(store.snapshot().queued).toEqual([]);
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    '“Step” was deleted elsewhere, so your change was dropped.',
+  ]);
+});
+
+test('a reorder that misses again on its retry is dropped as deleted elsewhere', async () => {
+  await seedSteps('s1', 's2');
+  await reorderSubtask(store, 's1', 's2', NOW);
+  google.failOn('reorderTask', new NotFoundError('gone'), { times: 2 });
+  expect(await replay(google, store)).toBe('done');
+  expect(store.snapshot().queued).toEqual([]);
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    '“s1” was deleted elsewhere, so your change was dropped.',
+  ]);
+});
+
+test('a refused create takes its queued steps with it', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
+  const a = await addSubtask(store, id, 'A', NOW);
+  const b = await addSubtask(store, id, 'B', NOW);
+  await reorderSubtask(store, a, b, NOW);
+  google.failOn('insertTask', new HttpError(400, 'bad'), { times: 1 });
+  expect(await replay(google, store)).toBe('done');
+  expect(google.calls.map((c) => c.method)).toEqual(['insertTask']);
+  expect(store.snapshot().queued).toEqual([]);
+  expect(store.snapshot().notices.map((n) => n.text)).toEqual([
+    'Google refused a change to “New” (error 400), so it was dropped.',
+  ]);
 });

@@ -174,16 +174,28 @@ test('the same entries in a different key order are not rewritten to Drive', asy
 });
 
 test("Google's order replaces the local one after a pull", async () => {
+  // Spaced like real Google, so the pulled positions differ from the local renumbering.
+  const spacing = 2 ** 30;
   const tasks = [
     task('x'),
-    ...['s1', 's2', 's3'].map((id, i) => task(id, { parent: 'x', position: fakePosition(i) })),
+    ...['s1', 's2', 's3'].map((id, i) =>
+      task(id, { parent: 'x', position: fakePosition(BigInt(i * spacing)) }),
+    ),
   ];
-  google = createFakeGoogle({ lists: LISTS, tasks, board: file({ x: entry() }) });
+  google = createFakeGoogle({
+    lists: LISTS,
+    tasks,
+    board: file({ x: entry() }),
+    positionSpacing: spacing,
+  });
   await store.commit({ replaceRemote: { lists: LISTS, tasks } });
   await reorderSubtask(store, 's3', null, NOW.toISOString());
   expect(await replay(google, store)).toBe('done');
   // Someone else moves s1 to the end before we pull.
   await google.reorderTask('L1', 's1', 'x', 's2');
+  expect(google.tasks.get('s1')?.position).not.toBe(
+    store.snapshot().tasks.find((t) => t.id === 's1')?.position,
+  );
   await pull(google, store, NOW);
   const local = subtasksOf(store.snapshot().tasks, 'x');
   expect(local.map((t) => t.id)).toEqual(['s3', 's2', 's1']);

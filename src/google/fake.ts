@@ -24,7 +24,11 @@ export function createFakeGoogle(seed?: {
   lists?: TaskList[];
   tasks?: Task[];
   board?: string;
+  // Real Google spaces sibling positions widely; tests that mix local and Google
+  // positions need the same, or they cannot tell the two schemes apart.
+  positionSpacing?: number;
 }): FakeGoogle {
+  const spacing = BigInt(seed?.positionSpacing ?? 1);
   const lists = [...(seed?.lists ?? [])];
   const tasks = new Map<string, Task>();
   for (const t of seed?.tasks ?? []) tasks.set(t.id, { ...t });
@@ -135,7 +139,7 @@ export function createFakeGoogle(seed?: {
         tasks.set(task.id, task);
         siblings.splice(index, 0, task);
         siblings.forEach((s, i) => {
-          s.position = fakePosition(i);
+          s.position = fakePosition(BigInt(i) * spacing);
         });
         return { ...task };
       });
@@ -194,7 +198,7 @@ export function createFakeGoogle(seed?: {
         t.parent = parent;
         t.updated = new Date().toISOString();
         siblings.forEach((s, i) => {
-          s.position = fakePosition(i);
+          s.position = fakePosition(BigInt(i) * spacing);
         });
         return { ...t };
       });
