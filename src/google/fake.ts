@@ -1,5 +1,5 @@
 import type { Task, TaskList } from '../domain/types';
-import { type GoogleApi, NotFoundError } from './api';
+import { type GoogleApi, HttpError, NotFoundError } from './api';
 
 export interface FakeGoogle extends GoogleApi {
   lists: TaskList[];
@@ -99,6 +99,36 @@ export function createFakeGoogle(seed?: {
       return run('getDefaultListId', [], () => {
         if (!defaultListId) throw new NotFoundError('default list');
         return defaultListId;
+      });
+    },
+
+    insertTaskList(title) {
+      return run('insertTaskList', [title], () => {
+        idCounter += 1;
+        const list = { id: `list${idCounter}`, title };
+        lists.push(list);
+        return { ...list };
+      });
+    },
+
+    patchTaskList(listId, title) {
+      return run('patchTaskList', [listId, title], () => {
+        requireList(listId);
+        const list = lists.find((l) => l.id === listId) as TaskList;
+        list.title = title;
+        return { ...list };
+      });
+    },
+
+    deleteTaskList(listId) {
+      return run('deleteTaskList', [listId], () => {
+        if (listId === defaultListId) throw new HttpError(400, 'Invalid Value');
+        requireList(listId);
+        lists.splice(
+          lists.findIndex((l) => l.id === listId),
+          1,
+        );
+        for (const t of [...tasks.values()]) if (t.listId === listId) tasks.delete(t.id);
       });
     },
 

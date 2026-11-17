@@ -190,6 +190,11 @@ export function reconcile(
   return result;
 }
 
+// For the delete prompt: what Andy would recognise as the list's tasks.
+export function openTaskCount(tasks: Task[], listId: string): number {
+  return tasks.filter((t) => t.listId === listId && t.parent === null && !t.completed).length;
+}
+
 export interface Card {
   task: Task;
   list: TaskList;

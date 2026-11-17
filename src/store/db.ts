@@ -46,6 +46,9 @@ export interface Snapshot {
 export interface Change {
   // Replace the whole Google mirror (lists and tasks); put/remove below apply on top.
   replaceRemote?: { lists: TaskList[]; tasks: Task[] };
+  // Applied after replaceRemote. putLists replaces a list with the same ID.
+  putLists?: TaskList[];
+  removeLists?: string[];
   putTasks?: Task[];
   removeTasks?: string[];
   // Replaces every entry; `entries` and `removeEntries` apply on top.
@@ -269,7 +272,14 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
       const next: Partial<State> = {};
       const putTasks = change.putTasks ?? [];
       const removeTasks = change.removeTasks ?? [];
-      if (change.replaceRemote) next.lists = [...change.replaceRemote.lists];
+      const putLists = change.putLists ?? [];
+      const removeLists = change.removeLists ?? [];
+      if (change.replaceRemote || putLists.length || removeLists.length) {
+        const lists = new Map((change.replaceRemote?.lists ?? s.lists).map((l) => [l.id, l]));
+        for (const id of removeLists) lists.delete(id);
+        for (const l of putLists) lists.set(l.id, l);
+        next.lists = [...lists.values()];
+      }
       if (change.replaceRemote || putTasks.length || removeTasks.length) {
         const byId = new Map((change.replaceRemote?.tasks ?? s.tasks).map((t) => [t.id, t]));
         for (const id of removeTasks) byId.delete(id);
@@ -317,6 +327,8 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
                 ...change.replaceRemote.lists.map((l) => tx.objectStore('lists').put(l)),
               ]
             : []),
+          ...removeLists.map((id) => tx.objectStore('lists').delete(id)),
+          ...putLists.map((l) => tx.objectStore('lists').put(l)),
           ...(change.replaceEntries ? [tx.objectStore('entries').clear()] : []),
           ...(change.replaceRemote?.tasks ?? []).map((t) => tx.objectStore('tasks').put(t)),
           ...(change.replaceEntries

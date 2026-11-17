@@ -4,6 +4,7 @@ import {
   completeEntry,
   listColour,
   mergeEntries,
+  openTaskCount,
   parseBoardFile,
   placeInColumn,
   reconcile,
@@ -467,4 +468,15 @@ describe('board file priority and unknown fields', () => {
     expect(mergeEntries(local, remote).a?.priority).toBe('high');
     expect(mergeEntries(remote, local).a?.priority).toBe('high');
   });
+});
+
+test('openTaskCount counts open top-level tasks only', () => {
+  const tasks = [
+    task('a', { listId: 'L1' }),
+    task('b', { listId: 'L1' }),
+    task('step', { listId: 'L1', parent: 'a' }),
+    task('done', { listId: 'L1', completed: true, completedAt: NOW }),
+    task('other', { listId: 'L2' }),
+  ];
+  expect(openTaskCount(tasks, 'L1')).toBe(2);
 });

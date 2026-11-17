@@ -114,6 +114,7 @@ export function createHttpGoogle(
 
   const taskUrl = (listId: string, taskId: string) =>
     `${TASKS}/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`;
+  const listUrl = (listId: string) => `${TASKS}/users/@me/lists/${encodeURIComponent(listId)}`;
 
   async function findBoard(): Promise<DriveFile | null> {
     const query = new URLSearchParams({
@@ -144,6 +145,22 @@ export function createHttpGoogle(
     async getDefaultListId() {
       const res = await request(`${TASKS}/users/@me/lists/@default`);
       return ((await res.json()) as TaskList).id;
+    },
+
+    async insertTaskList(title) {
+      const res = await request(`${TASKS}/users/@me/lists`, jsonInit('POST', { title }));
+      const list = (await res.json()) as TaskList;
+      return { id: list.id, title: list.title };
+    },
+
+    async patchTaskList(listId, title) {
+      const res = await request(listUrl(listId), jsonInit('PATCH', { title }));
+      const list = (await res.json()) as TaskList;
+      return { id: list.id, title: list.title };
+    },
+
+    async deleteTaskList(listId) {
+      await request(listUrl(listId), { method: 'DELETE' });
     },
 
     async listTasks(listId, completedSince) {
