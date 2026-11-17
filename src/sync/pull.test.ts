@@ -41,13 +41,22 @@ test('a pull that fails partway writes nothing and prunes nothing', async () => 
   expect(google.board.version).toBe(versionBefore);
 });
 
-test('a task added in Google Home appears at the bottom of Backlog and is written to Drive', async () => {
+test('a task added in Google Home to My Tasks lands in Next and is written to Drive', async () => {
+  // The fake's default list is its first list, L1.
   google = createFakeGoogle({ lists: LISTS, tasks: [task('a')], board: file({ a: entry() }) });
-  google.tasks.set('home', task('home'));
+  google.tasks.set('home', task('home', { listId: 'L1' }));
   await pull(google, store, NOW);
-  expect(store.snapshot().entries.home?.column).toBe('Backlog');
-  expect(store.snapshot().entries.home?.rank).toBeGreaterThan(1024);
-  expect(parseBoardFile(google.board.raw).home).toBeDefined();
+  expect(store.snapshot().defaultListId).toBe('L1');
+  expect(store.snapshot().entries.home?.column).toBe('Next');
+  expect(parseBoardFile(google.board.raw).home?.column).toBe('Next');
+});
+
+test('a task added in Google to another list lands at the bottom of Backlog', async () => {
+  google = createFakeGoogle({ lists: LISTS, tasks: [task('a')], board: file({ a: entry() }) });
+  google.tasks.set('work', task('work', { listId: 'L2' }));
+  await pull(google, store, NOW);
+  expect(store.snapshot().entries.work?.column).toBe('Backlog');
+  expect(store.snapshot().entries.work?.rank).toBeGreaterThan(1024);
 });
 
 test('another device’s newer move survives a merge with our older entry', async () => {

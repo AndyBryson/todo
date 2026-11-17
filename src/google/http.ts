@@ -141,6 +141,11 @@ export function createHttpGoogle(
       return lists.map((l) => ({ id: l.id, title: l.title }));
     },
 
+    async getDefaultListId() {
+      const res = await request(`${TASKS}/users/@me/lists/@default`);
+      return ((await res.json()) as TaskList).id;
+    },
+
     async listTasks(listId, completedSince) {
       const base = `${TASKS}/lists/${encodeURIComponent(listId)}/tasks`;
       const open = await pages<GoogleTask>(base, new URLSearchParams({ showCompleted: 'false' }));

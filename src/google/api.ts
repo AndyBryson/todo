@@ -18,6 +18,8 @@ export type TaskPatch = Partial<{
 
 export interface GoogleApi {
   listTaskLists(): Promise<TaskList[]>;
+  // The list Google Home and other Google clients add to (My Tasks).
+  getDefaultListId(): Promise<string>;
   // Open tasks, top-level tasks completed since completedSince, and completed subtasks of any
   // age so a card's step count stays right; hidden included; every page.
   listTasks(listId: string, completedSince: string): Promise<Task[]>;

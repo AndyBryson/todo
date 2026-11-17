@@ -29,7 +29,7 @@ describe('reconcile', () => {
       task('a', { listId: 'L1', position: '1' }),
       task('c', { listId: 'L2', position: '0' }),
     ];
-    const out = reconcile(tasks, lists, {}, NOW);
+    const out = reconcile(tasks, lists, {}, NOW, null);
     const order = Object.entries(out)
       .sort(([, x], [, y]) => x.rank - y.rank)
       .map(([id]) => id);
@@ -42,25 +42,66 @@ describe('reconcile', () => {
       task('later', { position: '00000000000000000010' }),
       task('earlier', { position: '00000000000000000009' }),
     ];
-    const out = reconcile(tasks, LISTS, {}, NOW);
+    const out = reconcile(tasks, LISTS, {}, NOW, null);
     expect(out.earlier?.rank).toBeLessThan(out.later?.rank ?? 0);
   });
 
-  test('a task created in Google Home lands at the bottom of Backlog', () => {
+  test('with no default list known, a new task lands at the bottom of Backlog', () => {
     const entries = { x: entry({ column: 'Backlog', rank: 5000 }) };
-    const out = reconcile([task('x'), task('new')], LISTS, entries, NOW);
+    const out = reconcile([task('x'), task('new')], LISTS, entries, NOW, null);
     expect(out.new?.column).toBe('Backlog');
     expect(out.new?.rank).toBeGreaterThan(5000);
   });
 
+  describe('the default list (My Tasks)', () => {
+    const lists = [
+      { id: 'L1', title: 'My Tasks' },
+      { id: 'L2', title: 'Work' },
+    ];
+    const existing = {
+      x: entry({ column: 'Backlog', openColumn: 'Backlog', rank: 9000 }),
+      n: entry({ column: 'Next', openColumn: 'Next', rank: 3000 }),
+    };
+    const known = [task('x', { listId: 'L2' }), task('n', { listId: 'L2' })];
+
+    test('a new task in the default list starts at the bottom of Next', () => {
+      const out = reconcile([...known, task('new', { listId: 'L1' })], lists, existing, NOW, 'L1');
+      expect(out.new).toMatchObject({ column: 'Next', openColumn: 'Next' });
+      expect(out.new?.rank).toBeGreaterThan(3000);
+    });
+
+    test('a new task in another list starts in Backlog', () => {
+      const out = reconcile([...known, task('new', { listId: 'L2' })], lists, existing, NOW, 'L1');
+      expect(out.new).toMatchObject({ column: 'Backlog', openColumn: 'Backlog' });
+    });
+
+    test('a new completed task in the default list goes to Done, remembering Next', () => {
+      const done = task('new', { listId: 'L1', completed: true, completedAt: NOW });
+      const out = reconcile([...known, done], lists, existing, NOW, 'L1');
+      expect(out.new).toMatchObject({ column: 'Done', openColumn: 'Next' });
+    });
+
+    test('with no entries at all, default-list tasks start in Backlog', () => {
+      const out = reconcile([task('new', { listId: 'L1' })], lists, {}, NOW, 'L1');
+      expect(out.new?.column).toBe('Backlog');
+    });
+
+    test('a reopened task with no entry lands in Next', () => {
+      // Completed over 7 days ago, its entry dropped out; reopening makes it new again.
+      const reopened = task('old', { listId: 'L1', completed: false });
+      const out = reconcile([...known, reopened], lists, existing, NOW, 'L1');
+      expect(out.old?.column).toBe('Next');
+    });
+  });
+
   test('several new tasks in one pull each land below the previous', () => {
     const tasks = [task('a', { position: '1' }), task('b', { position: '2' })];
-    const out = reconcile(tasks, LISTS, {}, NOW);
+    const out = reconcile(tasks, LISTS, {}, NOW, null);
     expect(out.b?.rank).toBeGreaterThan(out.a?.rank ?? Number.POSITIVE_INFINITY);
   });
 
   test('a new task already completed goes straight to Done, unpinned', () => {
-    const out = reconcile([task('x', { completed: true, completedAt: NOW })], LISTS, {}, NOW);
+    const out = reconcile([task('x', { completed: true, completedAt: NOW })], LISTS, {}, NOW, null);
     expect(out.x).toMatchObject({ column: 'Done', openColumn: 'Backlog', pinned: false });
   });
 
@@ -70,6 +111,7 @@ describe('reconcile', () => {
       LISTS,
       { x: entry({ column: 'Doing', pinned: true }) },
       NOW,
+      null,
     );
     expect(out.x).toMatchObject({
       column: 'Done',
@@ -84,7 +126,7 @@ describe('reconcile', () => {
       y: entry({ column: 'Doing', rank: 9000 }),
       x: entry({ column: 'Done', openColumn: 'Doing' }),
     };
-    const out = reconcile([task('x'), task('y')], LISTS, entries, NOW);
+    const out = reconcile([task('x'), task('y')], LISTS, entries, NOW, null);
     expect(out.x?.column).toBe('Doing');
     expect(out.x?.rank).toBeGreaterThan(9000);
   });
@@ -95,12 +137,13 @@ describe('reconcile', () => {
       LISTS,
       { p: entry(), gone: entry() },
       NOW,
+      null,
     );
     expect(Object.keys(out).sort()).toEqual(['p']);
   });
 
   test('untouched entries keep their updatedAt', () => {
-    const out = reconcile([task('x')], LISTS, { x: entry({ column: 'Next' }) }, NOW);
+    const out = reconcile([task('x')], LISTS, { x: entry({ column: 'Next' }) }, NOW, null);
     expect(out.x?.updatedAt).toBe(OLD);
   });
 });
@@ -407,7 +450,13 @@ describe('board file priority and unknown fields', () => {
     const placed = placeInColumn({ a: e }, 'a', 'Next', null).a;
     expect(placed?.priority).toBe('lowest');
     expect(placed?.extra).toEqual({ colour: 'teal' });
-    const out = reconcile([task('a', { completed: true, completedAt: NOW })], LISTS, { a: e }, NOW);
+    const out = reconcile(
+      [task('a', { completed: true, completedAt: NOW })],
+      LISTS,
+      { a: e },
+      NOW,
+      null,
+    );
     expect(out.a?.priority).toBe('lowest');
     expect(out.a?.extra).toEqual({ colour: 'teal' });
   });

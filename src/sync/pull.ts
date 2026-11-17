@@ -20,12 +20,20 @@ export type PullResult = 'written' | 'skipped';
 export async function pull(google: GoogleApi, store: Store, now: Date): Promise<PullResult> {
   const completedSince = new Date(now.getTime() - DONE_WINDOW_MS).toISOString();
   const lists = await google.listTaskLists();
+  const defaultListId = await google.getDefaultListId();
   const tasks: Task[] = [];
   for (const list of lists) tasks.push(...(await google.listTasks(list.id, completedSince)));
 
   if (store.snapshot().queueLength > 0) return 'skipped';
 
-  const computed = await syncBoard(google, store.snapshot().entries, tasks, lists, now);
+  const computed = await syncBoard(
+    google,
+    store.snapshot().entries,
+    tasks,
+    lists,
+    now,
+    defaultListId,
+  );
 
   let written = false;
   await store.commit((current) => {
@@ -39,6 +47,7 @@ export async function pull(google: GoogleApi, store: Store, now: Date): Promise<
     return {
       replaceRemote: { lists, tasks },
       replaceEntries: mergeEntries(computed, live),
+      meta: { defaultListId },
     };
   });
   return written ? 'written' : 'skipped';
@@ -53,13 +62,14 @@ export async function syncBoard(
   tasks: Task[],
   lists: TaskList[],
   now: Date,
+  defaultListId: string | null,
 ): Promise<BoardEntries> {
   const nowIso = now.toISOString();
   let result = local;
   for (let attempt = 0; attempt < BOARD_ATTEMPTS; attempt++) {
     const { raw, version } = await google.readBoard();
     const remote = parseBoardFile(raw);
-    result = reconcile(tasks, lists, mergeEntries(local, remote), nowIso);
+    result = reconcile(tasks, lists, mergeEntries(local, remote), nowIso, defaultListId);
     if (serialiseBoard(result) === serialiseBoard(remote)) return result;
     if ((await google.writeBoard(serialiseBoard(result), version)) === 'ok') return result;
   }

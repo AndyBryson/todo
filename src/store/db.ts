@@ -35,6 +35,8 @@ export interface Snapshot {
   notices: Notice[];
   lastSyncedAt: string | null;
   lastListId: string | null;
+  // Google's default list (My Tasks); null until a pull has learnt it.
+  defaultListId: string | null;
   // Old temporary ID to real ID, for this session only: an open screen or a late
   // edit can still hold the temporary ID after a replay has renamed the task.
   renamed: Record<string, string>;
@@ -114,7 +116,7 @@ export interface Store {
   snapshot(): Snapshot;
   subscribe(fn: () => void): () => void;
   dismissNotice(id: string): Promise<void>;
-  setMeta(meta: Partial<Pick<Snapshot, 'lastSyncedAt' | 'lastListId'>>): Promise<void>;
+  setMeta(meta: Partial<Meta>): Promise<void>;
 }
 
 interface Schema extends DBSchema {
@@ -128,7 +130,7 @@ interface Schema extends DBSchema {
 
 type Db = IDBPDatabase<Schema>;
 type Tx = IDBPTransaction<Schema, StoreNames<Schema>[], 'readwrite'>;
-export type Meta = Pick<Snapshot, 'lastSyncedAt' | 'lastListId'>;
+export type Meta = Pick<Snapshot, 'lastSyncedAt' | 'lastListId' | 'defaultListId'>;
 
 const STORES: StoreNames<Schema>[] = ['lists', 'tasks', 'entries', 'queue', 'notices', 'meta'];
 
@@ -185,6 +187,7 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
     meta: {
       lastSyncedAt: (await db.get('meta', 'lastSyncedAt')) ?? null,
       lastListId: (await db.get('meta', 'lastListId')) ?? null,
+      defaultListId: (await db.get('meta', 'defaultListId')) ?? null,
     },
     renamed: {},
   };

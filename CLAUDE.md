@@ -26,7 +26,8 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 ## Runtime rules
 
 - One window at a time. Each window has its own copy of the queue and mirror, so a Web Lock keeps a second window out and it shows a message instead.
-- Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog.
+- Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog, or of Next if it is in the default list (My Tasks).
+- Tasks first seen in My Tasks (Google's `@default` list, never matched by name) start in Next, so Google Home tasks are ready to act on. A first import, or a board that reads as empty, still puts everything in Backlog.
 - Completed steps (subtasks) are fetched at any age so a card's step count stays right; the Done column still shows only top-level tasks completed in the last 7 days.
 - Steps are ordered by Google's `position`. While changes wait, the app renumbers positions locally and the next pull replaces them. Google's insert without `previous` puts a task first, so a step create names its previous sibling.
 - Priority lives on board entries in `board.json`. Medium is stored as no field, and any other stored value reads as Medium.

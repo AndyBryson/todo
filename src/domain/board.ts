@@ -156,7 +156,11 @@ export function reconcile(
   lists: TaskList[],
   entries: BoardEntries,
   now: string,
+  defaultListId: string | null,
 ): BoardEntries {
+  // A first import (or a board.json that reads as empty) keeps everything in
+  // Backlog; only tasks that turn up later in My Tasks start in Next.
+  const boardExists = Object.keys(entries).length > 0;
   const result: BoardEntries = {};
   const ordered = inGoogleOrder(tasks, lists);
   const live = new Set(ordered.map((t) => t.id));
@@ -167,11 +171,13 @@ export function reconcile(
   for (const t of ordered) {
     const existing = result[t.id];
     if (!existing) {
+      // Google Home adds to My Tasks, and those tasks are meant to be acted on soon.
+      const column = boardExists && t.listId === defaultListId ? 'Next' : 'Backlog';
       const fresh: BoardEntry = {
-        column: 'Backlog',
-        rank: appendRank(ranksIn(result, 'Backlog')),
+        column,
+        rank: appendRank(ranksIn(result, column)),
         pinned: false,
-        openColumn: 'Backlog',
+        openColumn: column,
         updatedAt: now,
       };
       result[t.id] = t.completed ? completeEntry(fresh, now) : fresh;

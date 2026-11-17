@@ -24,12 +24,15 @@ export function createFakeGoogle(seed?: {
   lists?: TaskList[];
   tasks?: Task[];
   board?: string;
+  // Defaults to the first seeded list, as Google's My Tasks usually comes first.
+  defaultListId?: string;
   // Real Google spaces sibling positions widely; tests that mix local and Google
   // positions need the same, or they cannot tell the two schemes apart.
   positionSpacing?: number;
 }): FakeGoogle {
   const spacing = BigInt(seed?.positionSpacing ?? 1);
   const lists = [...(seed?.lists ?? [])];
+  const defaultListId = seed?.defaultListId ?? lists[0]?.id;
   const tasks = new Map<string, Task>();
   for (const t of seed?.tasks ?? []) tasks.set(t.id, { ...t });
   const board = {
@@ -90,6 +93,13 @@ export function createFakeGoogle(seed?: {
 
     listTaskLists() {
       return run('listTaskLists', [], () => lists.map((l) => ({ ...l })));
+    },
+
+    getDefaultListId() {
+      return run('getDefaultListId', [], () => {
+        if (!defaultListId) throw new NotFoundError('default list');
+        return defaultListId;
+      });
     },
 
     listTasks(listId, completedSince) {
