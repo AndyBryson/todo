@@ -18,7 +18,7 @@ interface Failure {
 }
 
 // Google positions are zero-padded digit strings.
-export const fakePosition = (n: number) => String(n).padStart(20, '0');
+export const fakePosition = (n: number | bigint) => String(n).padStart(20, '0');
 
 export function createFakeGoogle(seed?: {
   lists?: TaskList[];
@@ -58,6 +58,11 @@ export function createFakeGoogle(seed?: {
     return t;
   };
   const subtasksOf = (id: string) => [...tasks.values()].filter((t) => t.parent === id);
+  // Positions outgrow Number precision, so compare them as integers.
+  const byPosition = (a: Task, b: Task) => {
+    const [x, y] = [BigInt(a.position), BigInt(b.position)];
+    return x < y ? -1 : x > y ? 1 : 0;
+  };
 
   return {
     lists,
@@ -103,9 +108,10 @@ export function createFakeGoogle(seed?: {
     insertTask(listId, input) {
       return run('insertTask', [listId, input], () => {
         requireList(listId);
+        if (input.parent) requireTask(listId, input.parent);
         const last = [...tasks.values()]
-          .filter((t) => t.listId === listId && t.parent === null)
-          .reduce((max, t) => Math.max(max, Number(t.position)), -1);
+          .filter((t) => t.listId === listId && t.parent === (input.parent ?? null))
+          .reduce((max, t) => (BigInt(t.position) > max ? BigInt(t.position) : max), -1n);
         idCounter += 1;
         const task: Task = {
           id: `${Math.random().toString(36).slice(2, 10)}${idCounter}`,
@@ -116,7 +122,7 @@ export function createFakeGoogle(seed?: {
           completed: false,
           completedAt: null,
           parent: input.parent ?? null,
-          position: fakePosition(last + 1),
+          position: fakePosition(last + 1n),
           updated: new Date().toISOString(),
         };
         tasks.set(task.id, task);
@@ -155,6 +161,30 @@ export function createFakeGoogle(seed?: {
         for (const sub of subtasksOf(taskId)) sub.listId = destinationListId;
         t.listId = destinationListId;
         t.updated = new Date().toISOString();
+        return { ...t };
+      });
+    },
+
+    reorderTask(listId, taskId, parent, previous) {
+      return run('reorderTask', [listId, taskId, parent, previous], () => {
+        const t = requireTask(listId, taskId);
+        requireTask(listId, parent);
+        const siblings = subtasksOf(parent)
+          .filter((s) => s.id !== taskId)
+          .sort(byPosition);
+        let index = 0;
+        if (previous !== null) {
+          requireTask(listId, previous);
+          const at = siblings.findIndex((s) => s.id === previous);
+          if (at === -1) throw new NotFoundError(`task ${previous} under ${parent}`);
+          index = at + 1;
+        }
+        siblings.splice(index, 0, t);
+        t.parent = parent;
+        t.updated = new Date().toISOString();
+        siblings.forEach((s, i) => {
+          s.position = fakePosition(i);
+        });
         return { ...t };
       });
     },

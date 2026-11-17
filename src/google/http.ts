@@ -191,6 +191,13 @@ export function createHttpGoogle(
       return live(destinationListId, await res.json());
     },
 
+    async reorderTask(listId, taskId, parent, previous) {
+      const query = new URLSearchParams({ parent });
+      if (previous !== null) query.set('previous', previous);
+      const res = await request(`${taskUrl(listId, taskId)}/move?${query}`, { method: 'POST' });
+      return live(listId, await res.json());
+    },
+
     async readBoard() {
       const file = await findBoard();
       if (!file) return { raw: null, version: null };

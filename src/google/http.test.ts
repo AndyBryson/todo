@@ -193,6 +193,23 @@ describe('writes', () => {
     expect(task.parent).toBe('p');
   });
 
+  test('reorderTask moves under the parent after the previous sibling', async () => {
+    const { google, requests } = api(() => json(item('t2', { parent: 'p', position: '5' })));
+    const task = await google.reorderTask('L1', 't2', 'p', 't1');
+    expect(requests[0]?.init.method).toBe('POST');
+    expect(requests[0]?.url.pathname).toBe('/tasks/v1/lists/L1/tasks/t2/move');
+    expect(requests[0]?.url.searchParams.get('parent')).toBe('p');
+    expect(requests[0]?.url.searchParams.get('previous')).toBe('t1');
+    expect(task).toMatchObject({ id: 't2', parent: 'p', position: '5' });
+  });
+
+  test('reorderTask with no previous sends parent only', async () => {
+    const { google, requests } = api(() => json(item('t2', { parent: 'p' })));
+    await google.reorderTask('L1', 't2', 'p', null);
+    expect(requests[0]?.url.searchParams.get('parent')).toBe('p');
+    expect(requests[0]?.url.searchParams.has('previous')).toBe(false);
+  });
+
   test('move names the destination list and returns the moved task', async () => {
     const { google, requests } = api(() => json(item('a')));
     const task = await google.moveTask('L', 'a', 'M');

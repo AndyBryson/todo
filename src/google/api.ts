@@ -23,6 +23,13 @@ export interface GoogleApi {
   patchTask(listId: string, taskId: string, patch: TaskPatch): Promise<Task>;
   deleteTask(listId: string, taskId: string): Promise<void>;
   moveTask(listId: string, taskId: string, destinationListId: string): Promise<Task>;
+  // Places the task under parent directly after previous (first when null).
+  reorderTask(
+    listId: string,
+    taskId: string,
+    parent: string,
+    previous: string | null,
+  ): Promise<Task>;
   readBoard(): Promise<{ raw: string | null; version: string | null }>;
   writeBoard(raw: string, expectedVersion: string | null): Promise<'ok' | 'conflict'>;
 }
