@@ -1,6 +1,6 @@
 # Priorities, filters, sidebar and right-click: design
 
-Status: draft for approval. Date: 2026-11-17. Builds on `2026-11-17-todo-pwa-design.md` and `2026-11-17-multi-select-design.md`.
+Status: approved. Date: 2026-11-17. Builds on `2026-11-17-todo-pwa-design.md` and `2026-11-17-multi-select-design.md`.
 
 ## Intent
 
@@ -64,7 +64,7 @@ Andy wants to tag tasks with a Jira-style priority so he can **hide** cards he d
 - **Unknown fields:** kept per entry only (not top-level file fields). `BoardEntry` gains an `extra?: Record<string, unknown>` bag holding unrecognised fields; parse fills it, serialise writes it back after the known fields, and the IndexedDB mirror stores entries whole, so it survives the round trip. Entry-building code that spreads `...entry` carries it along.
 - **Merge:** stays per entry, newest `updatedAt` wins. A move on one device and a priority change on another at nearly the same time can lose one of them; accepted, as for moves today. Priority survives Done and reopen.
 - **Planned-date filter:** "today" is the device's local calendar date (`localDate`); compare `YYYY-MM-DD` strings; a card planned exactly on today + n is shown; overdue cards are shown. No midnight timer; the next render picks up the new day.
-- **Priority tick boxes:** at least one level must stay ticked (the last ticked box is disabled), so the board can never go blank by accident. The Filter count shows 1 for the priority group when any level is unticked, and 1 for the date filter when it's on.
+- **Priority tick boxes:** any combination is allowed, including none (Andy's call). With none ticked, the board shows a short line, "Every priority is hidden by the filter", so an empty board explains itself. The Filter count shows 1 for the priority group when any level is unticked, and 1 for the date filter when it's on.
 - **Storage:** new keys `todo.priorities` and `todo.planned` beside the existing `todo.filter` (list filter, unchanged). The number field accepts whole days 1–365; anything else snaps back to the last valid value.
 - **Where the logic lives:** a pure `cardVisible(card, filters, today)` in `src/domain/` used by `buildBoard`; `buildBoard` takes the combined filters (its signature changes; existing tests updated).
 - **Drag on a filtered board:** as today, the card lands right after the visible card it's dropped under; hidden cards keep their order. Bulk moves only touch visible selected cards.
