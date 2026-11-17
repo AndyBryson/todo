@@ -18,6 +18,19 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
   const [draft, setDraft] = useState('');
   const draftRef = useRef('');
   const steps = subtasksOf(snapshot.tasks, parent.id);
+  // A step keeps its temporary ID as its key once Google names it, so the row is not
+  // remounted mid-edit and focus stays put.
+  const originalOf = new Map<string, string>();
+  for (const [from, to] of Object.entries(snapshot.renamed)) originalOf.set(to, from);
+  const keyOf = (id: string) => {
+    let key = id;
+    const seen = new Set<string>();
+    while (originalOf.has(key) && !seen.has(key)) {
+      seen.add(key);
+      key = originalOf.get(key) as string;
+    }
+    return key;
+  };
 
   const move = (taskId: string, previousId: string | null) =>
     act(() => reorderSubtask(store, taskId, previousId, new Date().toISOString()));
@@ -63,10 +76,11 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
       previous = next.id;
     }
     const part = (document.activeElement as HTMLElement | null)?.dataset.part;
+    const key = keyOf(step.id);
     await move(step.id, previous);
     // Focus is on the old element until the re-render settles, so look the row up afterwards.
     requestAnimationFrame(() => {
-      const row = list.current?.querySelector<HTMLElement>(`[data-id="${step.id}"]`);
+      const row = list.current?.querySelector<HTMLElement>(`[data-key="${key}"]`);
       const target = row?.querySelector<HTMLElement>(`[data-part="${part ?? 'handle'}"]`);
       target?.focus();
     });
@@ -92,9 +106,10 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
       <ul class="steps" ref={list}>
         {steps.map((s, i) => (
           <li
-            key={s.id}
+            key={keyOf(s.id)}
             class={s.completed ? 'step done' : 'step'}
             data-id={s.id}
+            data-key={keyOf(s.id)}
             onKeyDown={(e) => void moveByKey(e, i)}
           >
             <button
