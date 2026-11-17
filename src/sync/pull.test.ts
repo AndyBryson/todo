@@ -1,11 +1,13 @@
 import { beforeEach, expect, test } from 'vitest';
 import { parseBoardFile, serialiseBoard } from '../domain/board';
+import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
 import { OfflineError } from '../google/api';
-import { createFakeGoogle, type FakeGoogle } from '../google/fake';
+import { createFakeGoogle, type FakeGoogle, fakePosition } from '../google/fake';
 import { openStore, type Store } from '../store/db';
-import { addTask, editTask } from '../store/edits';
+import { addTask, editTask, reorderSubtask } from '../store/edits';
 import { pull } from './pull';
+import { replay } from './push';
 
 const NOW = new Date('2026-11-17T10:00:00Z');
 const LATER = '2026-11-17T09:00:00Z';
@@ -169,4 +171,23 @@ test('the same entries in a different key order are not rewritten to Drive', asy
   await store.commit({ replaceEntries: { b: entry({ rank: 2048 }), a: entry() } });
   await pull(google, store, NOW);
   expect(google.calls.some((c) => c.method === 'writeBoard')).toBe(false);
+});
+
+test("Google's order replaces the local one after a pull", async () => {
+  const tasks = [
+    task('x'),
+    ...['s1', 's2', 's3'].map((id, i) => task(id, { parent: 'x', position: fakePosition(i) })),
+  ];
+  google = createFakeGoogle({ lists: LISTS, tasks, board: file({ x: entry() }) });
+  await store.commit({ replaceRemote: { lists: LISTS, tasks } });
+  await reorderSubtask(store, 's3', null, NOW.toISOString());
+  expect(await replay(google, store)).toBe('done');
+  // Someone else moves s1 to the end before we pull.
+  await google.reorderTask('L1', 's1', 'x', 's2');
+  await pull(google, store, NOW);
+  const local = subtasksOf(store.snapshot().tasks, 'x');
+  expect(local.map((t) => t.id)).toEqual(['s3', 's2', 's1']);
+  expect(local.map((t) => t.position)).toEqual(
+    ['s3', 's2', 's1'].map((id) => google.tasks.get(id)?.position),
+  );
 });

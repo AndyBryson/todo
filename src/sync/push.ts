@@ -1,3 +1,4 @@
+import { subtasksOf } from '../domain/subtasks';
 import type { Task } from '../domain/types';
 import {
   AuthError,
@@ -39,19 +40,75 @@ export async function replay(google: GoogleApi, store: Store): Promise<ReplayRes
   }
 }
 
-// A task created and deleted before anything was sent never needs to exist in Google.
-// A create already attempted may have reached Google, so it replays and the delete follows.
+// A task created and deleted before anything was sent never needs to exist in Google,
+// and nor does a step created under a task that is being deleted. A create already
+// attempted may have reached Google, so it replays and the delete follows.
 function dropUnsentCreates(s: Snapshot): Change {
-  const unsent = new Set(
-    s.queued.flatMap((q) => (q.op.kind === 'create' && !q.op.attemptedAt ? [q.op.tempId] : [])),
-  );
+  const deleted = new Set(s.queued.flatMap((q) => (q.op.kind === 'delete' ? [q.op.taskId] : [])));
   const doomed = new Set(
-    s.queued
-      .filter((q) => q.op.kind === 'delete')
-      .map((q) => idOf(q.op))
-      .filter((id) => unsent.has(id)),
+    s.queued.flatMap((q) =>
+      q.op.kind === 'create' &&
+      !q.op.attemptedAt &&
+      (deleted.has(q.op.tempId) ||
+        (q.op.task.parent !== undefined && deleted.has(q.op.task.parent)))
+        ? [q.op.tempId]
+        : [],
+    ),
   );
-  return { dequeue: s.queued.filter((q) => doomed.has(idOf(q.op))).map((q) => q.seq) };
+  return dropOps(s, doomed);
+}
+
+// Dequeues every op of a task that will never exist in Google, or that names one as
+// its parent, and points ops naming one as `previous` somewhere that will exist.
+function dropOps(s: Snapshot, gone: Set<string>): Pick<Change, 'dequeue' | 'requeue'> {
+  const dropped = s.queued.filter(
+    (q) =>
+      gone.has(idOf(q.op)) ||
+      (q.op.kind === 'create' && q.op.task.parent !== undefined && gone.has(q.op.task.parent)) ||
+      (q.op.kind === 'reorder' && gone.has(q.op.parent)),
+  );
+  const droppedSeqs = new Set(dropped.map((q) => q.seq));
+  const requeue = s.queued.flatMap((q): QueuedOp[] => {
+    if (droppedSeqs.has(q.seq)) return [];
+    const { op } = q;
+    if (op.kind === 'create' && op.task.parent && op.task.previous && gone.has(op.task.previous)) {
+      const previous = fallbackPrevious(s, q, op.task.parent, op.task.previous, gone);
+      return [{ seq: q.seq, op: { ...op, task: { ...op.task, previous: previous ?? undefined } } }];
+    }
+    if (op.kind === 'reorder' && op.previous !== null && gone.has(op.previous)) {
+      return [
+        {
+          seq: q.seq,
+          op: { ...op, previous: fallbackPrevious(s, q, op.parent, op.previous, gone) },
+        },
+      ];
+    }
+    return [];
+  });
+  return { dequeue: [...droppedSeqs], requeue };
+}
+
+// The nearest sibling before goneId in the local order that is still expected to exist
+// in Google by the time q runs. When goneId has already left the mirror, the op's own
+// task marks the place instead.
+function fallbackPrevious(
+  s: Snapshot,
+  q: QueuedOp,
+  parent: string,
+  goneId: string,
+  gone: Set<string>,
+): string | null {
+  const self = idOf(q.op);
+  const createdLater = new Set(
+    s.queued.flatMap((o) => (o.seq >= q.seq && o.op.kind === 'create' ? [o.op.tempId] : [])),
+  );
+  const order = subtasksOf(s.tasks, parent).map((t) => t.id);
+  const at = order.includes(goneId) ? order.indexOf(goneId) : order.indexOf(self);
+  for (let i = at - 1; i >= 0; i--) {
+    const id = order[i] as string;
+    if (id !== self && !gone.has(id) && !createdLater.has(id)) return id;
+  }
+  return null;
 }
 
 async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<void> {
@@ -60,7 +117,7 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
     switch (op.kind) {
       case 'create': {
         const real = await createInGoogle(google, store, head, op);
-        await store.commit((s) => settle(s, seq, op.tempId, real));
+        if (real) await store.commit((s) => settle(s, seq, op.tempId, real));
         return;
       }
       case 'patch':
@@ -83,6 +140,10 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
         }
         return;
       }
+      case 'reorder':
+        return await runReorder(google, store, head, op);
+      default:
+        return assertNever(op);
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
@@ -101,6 +162,73 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
     }
     throw error;
   }
+}
+
+// A new op kind without a case here would leave the head queued and spin replay forever.
+function assertNever(op: never): never {
+  throw new Error(`Unknown op ${JSON.stringify(op)}`);
+}
+
+// A reorder misses when the step or the sibling it follows was deleted elsewhere.
+// A missing parent takes the step with it, so that case is covered by the first.
+async function runReorder(
+  google: GoogleApi,
+  store: Store,
+  head: QueuedOp,
+  op: Extract<Op, { kind: 'reorder' }>,
+): Promise<void> {
+  let result: Task;
+  try {
+    result = await google.reorderTask(op.listId, op.taskId, op.parent, op.previous);
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) throw error;
+    if (!(await findTask(google, op.listId, op.taskId))) {
+      await store.commit((s) => dropDeleted(s, op.taskId));
+      return;
+    }
+    const previous = await survivingPrevious(
+      google,
+      store,
+      op.listId,
+      op.parent,
+      op.previous,
+      op.taskId,
+    );
+    result = await google.reorderTask(op.listId, op.taskId, op.parent, previous);
+  }
+  await store.commit((s) => settle(s, head.seq, op.taskId, result));
+}
+
+async function findTask(google: GoogleApi, listId: string, taskId: string): Promise<Task | null> {
+  try {
+    return await google.getTask(listId, taskId);
+  } catch (error) {
+    if (error instanceof NotFoundError) return null;
+    throw error;
+  }
+}
+
+// The nearest sibling before `missing` in the local order that Google still has under
+// parent, or null for first. Steps still waiting to be created are not in Google yet.
+async function survivingPrevious(
+  google: GoogleApi,
+  store: Store,
+  listId: string,
+  parent: string,
+  missing: string | null,
+  self: string,
+): Promise<string | null> {
+  const s = store.snapshot();
+  const unsent = new Set(s.queued.flatMap((q) => (q.op.kind === 'create' ? [q.op.tempId] : [])));
+  const order = subtasksOf(s.tasks, parent).map((t) => t.id);
+  const at =
+    missing !== null && order.includes(missing) ? order.indexOf(missing) : order.indexOf(self);
+  for (let i = at - 1; i >= 0; i--) {
+    const id = order[i] as string;
+    if (id === self || unsent.has(id)) continue;
+    if ((await findTask(google, listId, id))?.parent === parent) return id;
+  }
+  return null;
 }
 
 // A 4xx other than auth, not-found, timeout or rate limit will never succeed on
@@ -177,7 +305,7 @@ function dropDeleted(s: Snapshot, taskId: string, notice?: string): Change {
   const family = s.tasks.filter((t) => t.id === taskId || t.parent === taskId).map((t) => t.id);
   const title = s.tasks.find((t) => t.id === taskId)?.title || 'A task';
   return {
-    dequeue: s.queued.filter((q) => idOf(q.op) === taskId).map((q) => q.seq),
+    ...dropOps(s, new Set([taskId, ...family])),
     removeTasks: family,
     removeEntries: [...new Set([taskId, ...family])],
     notices: [notice ?? `“${title}” was deleted elsewhere, so your change was dropped.`],
@@ -186,19 +314,23 @@ function dropDeleted(s: Snapshot, taskId: string, notice?: string): Change {
 
 // A lost response or crash after Google accepted the insert would otherwise create a
 // duplicate on the next replay, so look for our own task before inserting again.
+// Returns null when the step was dropped because its parent is gone.
 async function createInGoogle(
   google: GoogleApi,
   store: Store,
   head: QueuedOp,
   op: Extract<Op, { kind: 'create' }>,
-): Promise<Task> {
+): Promise<Task | null> {
   if (op.attemptedAt) {
     const since = new Date(Date.parse(op.attemptedAt) - 60_000).toISOString();
     const known = new Set(store.snapshot().tasks.map((t) => t.id));
     const found = (await google.listTasks(op.listId, op.attemptedAt))
       .filter(
         (t) =>
-          t.title === op.task.title && t.parent === null && t.updated >= since && !known.has(t.id),
+          t.title === op.task.title &&
+          t.parent === (op.task.parent ?? null) &&
+          t.updated >= since &&
+          !known.has(t.id),
       )
       .sort((a, b) => a.updated.localeCompare(b.updated))[0];
     if (found) return found;
@@ -210,7 +342,28 @@ async function createInGoogle(
         : {},
     );
   }
-  return google.insertTask(op.listId, op.task);
+  try {
+    return await google.insertTask(op.listId, op.task);
+  } catch (error) {
+    if (!(error instanceof NotFoundError) || !op.task.parent) throw error;
+    // A step's insert also misses on its parent or on the sibling it follows, and only
+    // a missing list should be reported as one.
+    const { parent } = op.task;
+    if (!(await findTask(google, op.listId, parent))) {
+      if (!(await google.listTaskLists()).some((l) => l.id === op.listId)) throw error;
+      await store.commit((s) => dropDeleted(s, op.tempId));
+      return null;
+    }
+    const previous = await survivingPrevious(
+      google,
+      store,
+      op.listId,
+      parent,
+      op.task.previous ?? null,
+      op.tempId,
+    );
+    return google.insertTask(op.listId, { ...op.task, previous: previous ?? undefined });
+  }
 }
 
 // NotFound from a move means the task left the old list (the move already happened
@@ -221,14 +374,7 @@ async function resolveMissingMove(
   head: QueuedOp,
   op: Extract<Op, { kind: 'move' }>,
 ): Promise<void> {
-  const find = async (listId: string) => {
-    try {
-      return await google.getTask(listId, op.taskId);
-    } catch (error) {
-      if (error instanceof NotFoundError) return null;
-      throw error;
-    }
-  };
+  const find = (listId: string) => findTask(google, listId, op.taskId);
   const moved = await find(op.toListId);
   if (moved) {
     await store.commit((s) => settle(s, head.seq, op.taskId, moved));
