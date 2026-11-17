@@ -69,7 +69,7 @@ export function FilterMenu({ filters, onFilters }: Props) {
   return (
     <div class="filter-wrap" ref={wrap}>
       <button type="button" aria-expanded={open} onClick={toggleOpen}>
-        {count > 0 ? `Filter (${count})` : 'Filter'} ▾
+        {count > 0 ? `Filter (${count})` : 'Filter'} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <div class="filter-menu">

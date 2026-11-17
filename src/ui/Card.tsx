@@ -9,6 +9,9 @@ export const MARKERS = {
   lowest: { glyph: '▼▼', label: 'Priority: Lowest', tone: 'low' },
 } as const;
 
+// Android also fires contextmenu on a long-press; the hold-and-release path in Column owns touch.
+let lastPointer = 'mouse';
+
 interface Props {
   card: CardData;
   now: Date;
@@ -17,19 +20,50 @@ interface Props {
   selecting?: boolean;
   selected?: boolean;
   onToggle?(id: string): void;
+  onMenu?(id: string, x: number, y: number): void;
 }
 
-export function Card({ card, now, onOpen, selecting, selected, onToggle }: Props) {
+export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu }: Props) {
   const { task, list, entry, colour } = card;
   const priority = priorityOf(entry);
   const marker = priority === 'medium' ? null : MARKERS[priority];
   const overdue = task.due !== null && !task.completed && task.due < localDate(now);
+
+  function openMenu(e: MouseEvent | KeyboardEvent, at: { x: number; y: number }) {
+    if (selecting || !onMenu) return;
+    e.preventDefault();
+    onMenu(task.id, at.x, at.y);
+  }
+
+  // A keyboard-opened menu has no pointer, so it hangs from the card.
+  const anchor = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + 16, y: r.bottom - 8 };
+  };
+
   return (
     <li class={selected ? 'card selected' : 'card'} data-id={task.id}>
       <button
         type="button"
         class="card-body"
         aria-pressed={selecting ? Boolean(selected) : undefined}
+        onPointerDown={(e) => {
+          lastPointer = e.pointerType;
+        }}
+        onContextMenu={(e) => {
+          if (lastPointer === 'touch') {
+            e.preventDefault();
+            return;
+          }
+          const keyboard = e.clientX === 0 && e.clientY === 0;
+          openMenu(e, keyboard ? anchor(e.currentTarget) : { x: e.clientX, y: e.clientY });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            lastPointer = 'keyboard';
+            openMenu(e, anchor(e.currentTarget));
+          }
+        }}
         onClick={() => (selecting ? onToggle?.(task.id) : onOpen(task.id))}
       >
         <span class="card-title">

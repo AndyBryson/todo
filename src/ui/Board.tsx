@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { buildBoard } from '../domain/board';
 import type { BoardFilters } from '../domain/filters';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
 import { openDetail } from './CardDetail';
+import { CardMenu } from './CardMenu';
 import { Column, type Drop } from './Column';
 import { QuickAdd } from './QuickAdd';
 import { SelectionBar } from './SelectionBar';
@@ -14,7 +15,7 @@ interface Props {
   snapshot: Snapshot;
   filters: BoardFilters;
   phone: boolean;
-  act(fn: () => Promise<void>): Promise<boolean>;
+  act(fn: () => Promise<unknown>): Promise<boolean>;
   selecting: boolean;
   onSelecting(on: boolean): void;
   onOpenDrawer(): void;
@@ -46,6 +47,7 @@ export function Board({
   const [selected, setSelected] = useState(loadColumn);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const now = new Date();
   const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
 
@@ -69,6 +71,16 @@ export function Board({
   useEffect(() => {
     if (!selecting) setPicked((prev) => (prev.size > 0 ? new Set() : prev));
   }, [selecting]);
+
+  // Select mode turns the menu off, and a menu left open would act on a card that is now a tick box.
+  useEffect(() => {
+    if (selecting) setMenu(null);
+  }, [selecting]);
+
+  const menuCard = menu
+    ? COLUMNS.flatMap((c) => board[c]).find((c) => c.task.id === menu.id)
+    : undefined;
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   const stopSelecting = () => onSelecting(false);
 
@@ -162,6 +174,7 @@ export function Board({
               selectedIds={chosenSet}
               onToggle={toggle}
               onSelectAll={selectAll}
+              onMenu={(id, x, y) => setMenu({ id, x, y })}
             >
               {!phone && name === 'Backlog' && (
                 <QuickAdd
@@ -178,6 +191,17 @@ export function Board({
             </Column>
           ))}
       </div>
+      {menu && menuCard && (
+        <CardMenu
+          key={menu.id}
+          card={menuCard}
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          act={act}
+          store={store}
+        />
+      )}
       {selecting && (
         <SelectionBar
           count={chosen.length}

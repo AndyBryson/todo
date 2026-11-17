@@ -43,7 +43,9 @@ function loadPriorities(): ReadonlySet<Priority> {
     const levels: unknown = raw ? JSON.parse(raw) : null;
     // An empty array is a real choice (nothing shown); only a missing or malformed value falls back.
     if (!Array.isArray(levels)) return DEFAULT_FILTERS.priorities;
-    return new Set(PRIORITIES.filter((p) => levels.includes(p)));
+    const valid = PRIORITIES.filter((p) => levels.includes(p));
+    // A non-empty array with no real level is corrupt, not a choice.
+    return valid.length === 0 && levels.length > 0 ? DEFAULT_FILTERS.priorities : new Set(valid);
   } catch {
     return DEFAULT_FILTERS.priorities;
   }
