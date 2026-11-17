@@ -1,0 +1,119 @@
+import { beforeEach, expect, test } from 'vitest';
+import { entry, task } from '../domain/test-fixtures';
+import { AuthError, OfflineError } from '../google/api';
+import { createFakeGoogle, type FakeGoogle } from '../google/fake';
+import { openStore, type Store } from '../store/db';
+import { addTask, deleteTask, editTask, moveCard, moveToList } from '../store/edits';
+import { replay } from './push';
+
+const NOW = '2026-11-17T10:00:00Z';
+const LISTS = [
+  { id: 'L1', title: 'One' },
+  { id: 'L2', title: 'Two' },
+];
+let store: Store;
+let google: FakeGoogle;
+
+beforeEach(async () => {
+  store = await openStore(`test-${crypto.randomUUID()}`);
+  const tasks = ['x', 'y', 'z'].map((id) => task(id));
+  await store.replaceRemote(LISTS, tasks);
+  google = createFakeGoogle({ lists: LISTS, tasks });
+});
+
+test('edits to a task still waiting to be created follow it to its real ID', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
+  await editTask(store, id, { notes: 'n' });
+  await moveCard(store, id, 'Next', null, NOW);
+  expect(await replay(google, store)).toBe('done');
+  const real = [...google.tasks.values()].find((t) => t.title === 'New') ?? task('missing');
+  expect(real.notes).toBe('n');
+  expect(store.snapshot().entries[real.id]?.column).toBe('Next');
+  expect(store.snapshot().entries[id]).toBeUndefined();
+  expect(store.snapshot().tasks.find((t) => t.id === real.id)?.notes).toBe('n');
+});
+
+test('deleting a task before its create is sent never reaches Google', async () => {
+  const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW);
+  await editTask(store, id, { notes: 'n' });
+  await deleteTask(store, id);
+  expect(await replay(google, store)).toBe('done');
+  expect(google.calls).toEqual([]);
+  expect(await store.queue()).toEqual([]);
+});
+
+test('an edit to a task deleted elsewhere is dropped with a notice', async () => {
+  await editTask(store, 'x', { title: 'Renamed' });
+  await editTask(store, 'x', { notes: 'later' });
+  google.tasks.delete('x');
+  expect(await replay(google, store)).toBe('done');
+  expect(await store.queue()).toEqual([]);
+  expect(store.snapshot().tasks.map((t) => t.id)).not.toContain('x');
+  expect(store.snapshot().notices).toHaveLength(1);
+  expect(store.snapshot().notices[0]?.text).toBe(
+    '“Renamed” was deleted elsewhere, so your change was dropped.',
+  );
+});
+
+test('a field changed elsewhere is kept and the local change is reported, other fields still apply', async () => {
+  await editTask(store, 'x', { title: 'Mine', notes: 'local notes' });
+  google.tasks.set('x', task('x', { title: 'Theirs' }));
+  await replay(google, store);
+  expect(google.tasks.get('x')).toMatchObject({ title: 'Theirs', notes: 'local notes' });
+  expect(store.snapshot().notices[0]?.text).toBe(
+    "“Theirs”: your change to title wasn't applied because it was changed elsewhere. Your version: Mine",
+  );
+  expect(store.snapshot().tasks.find((t) => t.id === 'x')).toMatchObject({
+    title: 'Theirs',
+    notes: 'local notes',
+  });
+});
+
+test('nothing is sent when every field conflicts', async () => {
+  await editTask(store, 'x', { title: 'Mine' });
+  google.tasks.set('x', task('x', { title: 'Theirs' }));
+  await replay(google, store);
+  expect(google.calls.map((c) => c.method)).toEqual(['getTask']);
+});
+
+test('token expiry mid-replay stops and keeps the rest in order', async () => {
+  await editTask(store, 'x', { title: 'one' });
+  await editTask(store, 'y', { title: 'two' });
+  await editTask(store, 'z', { title: 'three' });
+  google.failOn('getTask', new AuthError(), { after: 1 });
+  expect(await replay(google, store)).toBe('auth');
+  expect((await store.queue()).map((q) => (q.op as { taskId: string }).taskId)).toEqual(['y', 'z']);
+});
+
+test('going offline leaves the op at the head and changes nothing locally', async () => {
+  await editTask(store, 'x', { title: 'one' });
+  google.failOn('getTask', new OfflineError());
+  expect(await replay(google, store)).toBe('offline');
+  expect(await store.queue()).toHaveLength(1);
+  expect(store.snapshot().notices).toEqual([]);
+});
+
+test('a later local edit survives Google confirming an earlier one', async () => {
+  await editTask(store, 'x', { title: 'one' });
+  google.onAfter('patchTask', () => {
+    void editTask(store, 'x', { title: 'two' });
+  });
+  await replay(google, store);
+  expect(google.tasks.get('x')?.title).toBe('two');
+  expect(store.snapshot().tasks.find((t) => t.id === 'x')?.title).toBe('two');
+});
+
+test('deleting a task that is already gone counts as done', async () => {
+  await deleteTask(store, 'x');
+  google.tasks.delete('x');
+  expect(await replay(google, store)).toBe('done');
+  expect(store.snapshot().notices).toEqual([]);
+});
+
+test('moving a task to another list is sent and the board card stays', async () => {
+  await store.setEntries({ x: entry({ column: 'Next', openColumn: 'Next' }) });
+  await moveToList(store, 'x', 'L2');
+  expect(await replay(google, store)).toBe('done');
+  expect(google.tasks.get('x')?.listId).toBe('L2');
+  expect(store.snapshot().entries.x?.column).toBe('Next');
+});

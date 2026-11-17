@@ -29,6 +29,7 @@ export interface Snapshot {
   tasks: Task[];
   entries: BoardEntries;
   queueLength: number;
+  queued: QueuedOp[];
   notices: Notice[];
   lastSyncedAt: string | null;
   lastListId: string | null;
@@ -41,7 +42,26 @@ export interface Change {
   entries?: BoardEntries;
   removeEntries?: string[];
   enqueue?: Op[];
+  dequeue?: number[];
+  // Replaces the op at each seq; a seq also in `dequeue` is dropped instead.
+  requeue?: QueuedOp[];
+  notices?: string[];
   meta?: Partial<Meta>;
+}
+
+// Moves a task, its subtasks, its board entry and its queued ops to a new ID.
+export function renameChange(s: Snapshot, fromId: string, toId: string): Change {
+  const family = s.tasks.filter((t) => t.id === fromId || t.parent === fromId);
+  const entry = s.entries[fromId];
+  return {
+    putTasks: family.map((t) => (t.id === fromId ? { ...t, id: toId } : { ...t, parent: toId })),
+    removeTasks: family.some((t) => t.id === fromId) ? [fromId] : [],
+    entries: entry ? { [toId]: entry } : undefined,
+    removeEntries: entry ? [fromId] : [],
+    requeue: s.queued
+      .filter((q) => q.op.kind !== 'create' && q.op.taskId === fromId)
+      .map((q) => ({ seq: q.seq, op: { ...q.op, taskId: toId } as Op })),
+  };
 }
 
 export interface Store {
@@ -137,6 +157,7 @@ export async function openStore(name = 'todo'): Promise<Store> {
     tasks: s.tasks,
     entries: s.entries,
     queueLength: s.queued.length,
+    queued: s.queued,
     notices: s.notices,
     ...s.meta,
   });
@@ -218,7 +239,18 @@ export async function openStore(name = 'todo'): Promise<Store> {
         seq: nextSeq + i,
         op,
       }));
-      if (added.length) next.queued = [...s.queued, ...added];
+      const dequeued = new Set(change.dequeue ?? []);
+      const requeued = new Map((change.requeue ?? []).map((q) => [q.seq, q.op]));
+      if (dequeued.size || requeued.size || added.length) {
+        next.queued = [
+          ...s.queued
+            .filter((q) => !dequeued.has(q.seq))
+            .map((q) => ({ seq: q.seq, op: requeued.get(q.seq) ?? q.op })),
+          ...added,
+        ];
+      }
+      const notices = (change.notices ?? []).map((text) => ({ id: crypto.randomUUID(), text }));
+      if (notices.length) next.notices = [...s.notices, ...notices];
       if (change.meta) next.meta = { ...s.meta, ...change.meta };
 
       if (Object.keys(next).length === 0) return null;
@@ -234,6 +266,12 @@ export async function openStore(name = 'todo'): Promise<Store> {
           ),
           ...removeEntries.map((id) => tx.objectStore('entries').delete(id)),
           ...putQueue(tx, added),
+          ...putQueue(
+            tx,
+            [...requeued].filter(([seq]) => !dequeued.has(seq)).map(([seq, op]) => ({ seq, op })),
+          ),
+          ...[...dequeued].map((seq) => tx.objectStore('queue').delete(seq)),
+          ...notices.map((n) => tx.objectStore('notices').put(n)),
           ...Object.entries(change.meta ?? {}).map(([k, v]) =>
             tx.objectStore('meta').put(v as string | null, k),
           ),
@@ -295,69 +333,28 @@ export async function openStore(name = 'todo'): Promise<Store> {
     },
 
     dequeue(seq) {
-      return mutate((s) => ({
-        next: { queued: s.queued.filter((q) => q.seq !== seq) },
-        persist: (tx) => [tx.objectStore('queue').delete(seq)],
-      }));
+      return commit({ dequeue: [seq] });
     },
 
     rewriteQueue(fn) {
-      return mutate((s) => {
-        const kept: QueuedOp[] = [];
-        const dropped: QueuedOp[] = [];
+      return commit((s) => {
+        const dequeue: number[] = [];
+        const requeue: QueuedOp[] = [];
         for (const q of s.queued) {
           const op = fn(q.op);
-          if (op) kept.push({ seq: q.seq, op });
-          else dropped.push(q);
+          if (!op) dequeue.push(q.seq);
+          else if (op !== q.op) requeue.push({ seq: q.seq, op });
         }
-        return {
-          next: { queued: kept },
-          persist: (tx) => [
-            ...putQueue(tx, kept),
-            ...dropped.map((q) => tx.objectStore('queue').delete(q.seq)),
-          ],
-        };
+        return { dequeue, requeue };
       });
     },
 
     renameTask(fromId, toId) {
-      return mutate((s) => {
-        const renamed = (op: Op): Op =>
-          op.kind !== 'create' && op.taskId === fromId ? { ...op, taskId: toId } : op;
-        const queued = s.queued.map((q) => ({ seq: q.seq, op: renamed(q.op) }));
-        const tasks = s.tasks.map((t) => {
-          if (t.id === fromId) return { ...t, id: toId };
-          return t.parent === fromId ? { ...t, parent: toId } : t;
-        });
-        const entry = s.entries[fromId];
-        const board = { ...s.entries };
-        if (entry) {
-          board[toId] = entry;
-          delete board[fromId];
-        }
-        return {
-          next: { tasks, queued, entries: board },
-          persist: (tx) => [
-            tx.objectStore('tasks').delete(fromId),
-            ...tasks.map((t) => tx.objectStore('tasks').put(t)),
-            ...putQueue(tx, queued),
-            ...(entry
-              ? [
-                  tx.objectStore('entries').delete(fromId),
-                  tx.objectStore('entries').put(entry, toId),
-                ]
-              : []),
-          ],
-        };
-      });
+      return commit((s) => renameChange(s, fromId, toId));
     },
 
     addNotice(text) {
-      const notice = { id: crypto.randomUUID(), text };
-      return mutate((s) => ({
-        next: { notices: [...s.notices, notice] },
-        persist: (tx) => [tx.objectStore('notices').put(notice)],
-      }));
+      return commit({ notices: [text] });
     },
 
     dismissNotice(id) {
