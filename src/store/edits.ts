@@ -1,4 +1,4 @@
-import { completeEntry, placeInColumn, reopenEntry } from '../domain/board';
+import { completeEntry, placeInColumn, ranksIn, reopenEntry } from '../domain/board';
 import { appendRank } from '../domain/rank';
 import type { BoardEntries, BoardEntry, Column, Task } from '../domain/types';
 import type { TaskPatch } from '../google/api';
@@ -63,11 +63,7 @@ export async function addTask(
     entries: {
       [id]: {
         column: 'Backlog',
-        rank: appendRank(
-          Object.values(s.entries)
-            .filter((e) => e.column === 'Backlog')
-            .map((e) => e.rank),
-        ),
+        rank: appendRank(ranksIn(s.entries, 'Backlog')),
         pinned: input.pinned,
         openColumn: 'Backlog',
         updatedAt: now,

@@ -20,6 +20,15 @@ export function toGoogleDue(date: LocalDate): string {
   return `${date}T00:00:00.000Z`;
 }
 
+const dueFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
+// UTC keeps the calendar date from shifting with the device's time zone.
+export const formatDue = (due: LocalDate) => dueFormat.format(new Date(`${due}T00:00:00Z`));
+
 export function addDays(date: LocalDate, days: number): LocalDate {
   const [year = 0, month = 1, day = 1] = date.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);

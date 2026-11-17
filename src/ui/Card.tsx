@@ -1,6 +1,5 @@
 import type { Card as CardData } from '../domain/board';
-import { localDate } from '../domain/dates';
-import { formatDue } from './dueFormat';
+import { formatDue, localDate } from '../domain/dates';
 
 interface Props {
   card: CardData;

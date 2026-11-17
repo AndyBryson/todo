@@ -1,11 +1,10 @@
 import { listColour } from '../domain/board';
-import { localDate } from '../domain/dates';
+import { formatDue, localDate } from '../domain/dates';
 import { todaySections } from '../domain/today';
 import type { Task } from '../domain/types';
 import type { Snapshot, Store } from '../store/db';
 import { addTask, setCompleted } from '../store/edits';
 import { openDetail } from './CardDetail';
-import { formatDue } from './dueFormat';
 import { QuickAdd } from './QuickAdd';
 
 interface Props {

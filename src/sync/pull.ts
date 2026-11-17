@@ -1,9 +1,14 @@
-import { mergeEntries, parseBoardFile, reconcile, serialiseBoard } from '../domain/board';
+import {
+  DONE_WINDOW_MS,
+  mergeEntries,
+  parseBoardFile,
+  reconcile,
+  serialiseBoard,
+} from '../domain/board';
 import type { BoardEntries, Task, TaskList } from '../domain/types';
 import type { GoogleApi } from '../google/api';
 import type { Store } from '../store/db';
 
-const DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const BOARD_ATTEMPTS = 3;
 
 export type PullResult = 'written' | 'skipped';

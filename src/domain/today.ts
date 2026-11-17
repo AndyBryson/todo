@@ -1,5 +1,5 @@
 import { localDate } from './dates';
-import type { BoardEntries, Task } from './types';
+import { type BoardEntries, COLUMNS, type Task } from './types';
 
 export interface TodaySections {
   overdue: Task[];
@@ -30,6 +30,15 @@ export function todaySections(
 
   sections.overdue.sort(byDueThenTitle);
   sections.dueToday.sort(byDueThenTitle);
-  sections.pinned.sort((a, b) => (entries[a.id]?.rank ?? 0) - (entries[b.id]?.rank ?? 0));
+  // Pinned cards read in board order: column left to right, then rank.
+  const order = (t: Task) => {
+    const e = entries[t.id];
+    return [e ? COLUMNS.indexOf(e.column) : 0, e?.rank ?? 0] as const;
+  };
+  sections.pinned.sort((a, b) => {
+    const [ca, ra] = order(a);
+    const [cb, rb] = order(b);
+    return ca - cb || ra - rb;
+  });
   return sections;
 }

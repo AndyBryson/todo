@@ -21,6 +21,12 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 - `src/sync/`: pull, reconcile, push.
 - `src/domain/`: pure functions. Board construction, Today filter, ranking, dates.
 - `src/ui/`: components. No Google calls, and no logic worth testing.
+- `src/dev/`: dev-only helpers. `npm run dev` then `?fake` in the URL runs the app against an in-memory fake Google with seeded tasks and its own IndexedDB (`todo-fake`). It is imported only behind `import.meta.env.DEV`, so the production build leaves it out.
+
+## Runtime rules
+
+- One window at a time. Each window has its own copy of the queue and mirror, so a Web Lock keeps a second window out and it shows a message instead.
+- Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog.
 
 ## Testing policy
 

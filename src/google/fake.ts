@@ -17,7 +17,8 @@ interface Failure {
   seen: number;
 }
 
-const pad = (n: number) => String(n).padStart(20, '0');
+// Google positions are zero-padded digit strings.
+export const fakePosition = (n: number) => String(n).padStart(20, '0');
 
 export function createFakeGoogle(seed?: {
   lists?: TaskList[];
@@ -115,7 +116,7 @@ export function createFakeGoogle(seed?: {
           completed: false,
           completedAt: null,
           parent: input.parent ?? null,
-          position: pad(last + 1),
+          position: fakePosition(last + 1),
           updated: new Date().toISOString(),
         };
         tasks.set(task.id, task);

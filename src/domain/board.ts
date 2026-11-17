@@ -102,7 +102,7 @@ export function completeEntry(entry: BoardEntry, now: string): BoardEntry {
   };
 }
 
-function ranksIn(entries: BoardEntries, column: Column): number[] {
+export function ranksIn(entries: BoardEntries, column: Column): number[] {
   return Object.values(entries)
     .filter((e) => e.column === column)
     .map((e) => e.rank);
@@ -180,7 +180,8 @@ export interface Card {
   colour: string;
 }
 
-const DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// Done shows, and pull fetches, tasks completed within this window.
+export const DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Chosen to stay legible on both light and dark backgrounds.
 const PALETTE = [

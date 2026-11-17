@@ -35,7 +35,7 @@ test('pinned tasks show once; overdue wins over pinned; completed never shows', 
   expect(s.overdue.map((t) => t.id)).toEqual(['po']);
 });
 
-test('overdue sorts by due date then title; pinned by board rank; subtasks excluded', () => {
+test('overdue sorts by due date then title; pinned by rank; subtasks excluded', () => {
   const tasks = [
     task('b', { due: '2026-11-10' }),
     task('a', { due: '2026-11-10' }),
@@ -48,4 +48,16 @@ test('overdue sorts by due date then title; pinned by board rank; subtasks exclu
   const s = todaySections(tasks, entries, NOW, TZ);
   expect(s.overdue.map((t) => t.id)).toEqual(['c', 'a', 'b']);
   expect(s.pinned.map((t) => t.id)).toEqual(['p1', 'p2']);
+});
+
+test('pinned sorts by column, left to right, then by rank within a column', () => {
+  const tasks = [task('next1'), task('doing'), task('backlog9'), task('next2')];
+  const entries = {
+    next1: entry({ pinned: true, column: 'Next', openColumn: 'Next', rank: 1 }),
+    doing: entry({ pinned: true, column: 'Doing', openColumn: 'Doing', rank: 0 }),
+    backlog9: entry({ pinned: true, column: 'Backlog', rank: 9 }),
+    next2: entry({ pinned: true, column: 'Next', openColumn: 'Next', rank: 2 }),
+  };
+  const s = todaySections(tasks, entries, NOW, TZ);
+  expect(s.pinned.map((t) => t.id)).toEqual(['backlog9', 'next1', 'next2', 'doing']);
 });

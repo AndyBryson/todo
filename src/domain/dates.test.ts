@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { addDays, fromGoogleDue, localDate, toGoogleDue } from './dates';
+import { addDays, formatDue, fromGoogleDue, localDate, toGoogleDue } from './dates';
 
 describe('calendar dates', () => {
   test('evening in Los Angeles is still the same local day though UTC has rolled over', () => {
@@ -17,4 +17,9 @@ describe('calendar dates', () => {
     expect(addDays('2026-12-30', 3)).toBe('2027-01-02');
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
   });
+});
+
+test('a due date is shown as its own calendar day, whatever the device time zone', () => {
+  expect(formatDue('2026-11-01')).toBe('1 Nov');
+  expect(formatDue('2026-12-31')).toBe('31 Dec');
 });

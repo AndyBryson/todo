@@ -1,8 +1,6 @@
 import type { Task } from '../domain/types';
 import type { Auth } from '../google/auth';
-import { createFakeGoogle, type FakeGoogle } from '../google/fake';
-
-const pad = (n: number) => String(n).padStart(20, '0');
+import { createFakeGoogle, type FakeGoogle, fakePosition } from '../google/fake';
 
 function localDate(offsetDays: number): string {
   const d = new Date();
@@ -28,7 +26,7 @@ export function createFakeBackend(): { google: FakeGoogle; auth: Auth } {
     completed: false,
     completedAt: null,
     parent: null,
-    position: pad(position++),
+    position: fakePosition(position++),
     updated: now,
     ...extra,
   });
