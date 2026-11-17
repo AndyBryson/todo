@@ -27,6 +27,8 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 
 - One window at a time. Each window has its own copy of the queue and mirror, so a Web Lock keeps a second window out and it shows a message instead.
 - Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog.
+- Completed steps (subtasks) are fetched at any age so a card's step count stays right; the Done column still shows only top-level tasks completed in the last 7 days.
+- Steps are ordered by Google's `position`. While changes wait, the app renumbers positions locally and the next pull replaces them. Google's insert without `previous` puts a task first, so a step create names its previous sibling.
 
 ## Testing policy
 
@@ -36,6 +38,7 @@ Tests exist where there are rules that can be wrong. A test must be able to fail
 - Rank insertion and rebalancing.
 - Reconcile: new tasks, missing tasks, Done and reopen, Home-created tasks.
 - Queue replay and merge on conflict, using a fake `google/` implementation.
+- Step create and reorder, and replay when a step or its parent was deleted elsewhere.
 
 Not tested: snapshots, render-only component tests, and any test that only asserts a mock was called. UI behaviour such as drag and drop is checked by hand unless an automated check is cheap and stable.
 
