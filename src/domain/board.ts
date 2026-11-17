@@ -1,4 +1,5 @@
 import { appendRank, placeCard } from './rank';
+import { comparePosition } from './subtasks';
 import {
   type BoardEntries,
   type BoardEntry,
@@ -115,16 +116,6 @@ export function reopenEntry(entry: BoardEntry, entries: BoardEntries, now: strin
     rank: appendRank(ranksIn(entries, entry.openColumn)),
     updatedAt: now,
   };
-}
-
-// Google positions are digit strings, so "10" must sort after "9".
-function comparePosition(a: string, b: string): number {
-  if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
-    const x = BigInt(a);
-    const y = BigInt(b);
-    return x < y ? -1 : x > y ? 1 : 0;
-  }
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function inGoogleOrder(tasks: Task[], lists: TaskList[]): Task[] {

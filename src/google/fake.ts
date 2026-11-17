@@ -109,9 +109,16 @@ export function createFakeGoogle(seed?: {
       return run('insertTask', [listId, input], () => {
         requireList(listId);
         if (input.parent) requireTask(listId, input.parent);
-        const last = [...tasks.values()]
-          .filter((t) => t.listId === listId && t.parent === (input.parent ?? null))
-          .reduce((max, t) => (BigInt(t.position) > max ? BigInt(t.position) : max), -1n);
+        const parent = input.parent ?? null;
+        const siblings = [...tasks.values()]
+          .filter((t) => t.listId === listId && t.parent === parent)
+          .sort(byPosition);
+        let index = 0;
+        if (input.previous) {
+          const at = siblings.findIndex((s) => s.id === input.previous);
+          if (at === -1) throw new NotFoundError(`task ${input.previous}`);
+          index = at + 1;
+        }
         idCounter += 1;
         const task: Task = {
           id: `${Math.random().toString(36).slice(2, 10)}${idCounter}`,
@@ -122,10 +129,14 @@ export function createFakeGoogle(seed?: {
           completed: false,
           completedAt: null,
           parent: input.parent ?? null,
-          position: fakePosition(last + 1n),
+          position: '',
           updated: new Date().toISOString(),
         };
         tasks.set(task.id, task);
+        siblings.splice(index, 0, task);
+        siblings.forEach((s, i) => {
+          s.position = fakePosition(i);
+        });
         return { ...task };
       });
     },

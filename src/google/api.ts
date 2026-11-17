@@ -5,6 +5,8 @@ export interface NewTask {
   notes?: string;
   due?: LocalDate | null;
   parent?: string;
+  // Previous sibling; Google puts a task with none first.
+  previous?: string;
 }
 
 export type TaskPatch = Partial<{

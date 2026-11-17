@@ -193,6 +193,14 @@ describe('writes', () => {
     expect(task.parent).toBe('p');
   });
 
+  test('insert passes the previous sibling too, and omits it when not set', async () => {
+    const { google, requests } = api(() => json(item('new', { parent: 'p' })));
+    await google.insertTask('L', { title: 'Sub', parent: 'p', previous: 's1' });
+    await google.insertTask('L', { title: 'Top' });
+    expect(requests[0]?.url.searchParams.get('previous')).toBe('s1');
+    expect(requests[1]?.url.searchParams.has('previous')).toBe(false);
+  });
+
   test('reorderTask moves under the parent after the previous sibling', async () => {
     const { google, requests } = api(() => json(item('t2', { parent: 'p', position: '5' })));
     const task = await google.reorderTask('L1', 't2', 'p', 't1');

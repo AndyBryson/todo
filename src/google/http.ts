@@ -163,6 +163,7 @@ export function createHttpGoogle(
     async insertTask(listId, input: NewTask) {
       const query = new URLSearchParams();
       if (input.parent) query.set('parent', input.parent);
+      if (input.previous) query.set('previous', input.previous);
       const suffix = query.size > 0 ? `?${query}` : '';
       const res = await request(
         `${TASKS}/lists/${encodeURIComponent(listId)}/tasks${suffix}`,

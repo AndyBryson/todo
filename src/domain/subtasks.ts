@@ -4,7 +4,7 @@ const isDigits = (s: string) => /^\d+$/.test(s);
 
 // Digit positions compare as numbers ("10" after "9"); anything else, such as the
 // empty position of a step Google has not seen yet, sorts after them.
-function comparePosition(a: string, b: string): number {
+export function comparePosition(a: string, b: string): number {
   const aDigits = isDigits(a);
   const bDigits = isDigits(b);
   if (aDigits && bDigits) {

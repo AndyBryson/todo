@@ -65,7 +65,16 @@ function renameInOp(op: Op, fromId: string, toId: string): Op | null {
   const swap = (id: string) => (id === fromId ? toId : id);
   switch (op.kind) {
     case 'create':
-      return op.task.parent === fromId ? { ...op, task: { ...op.task, parent: toId } } : null;
+      return op.task.parent === fromId || op.task.previous === fromId
+        ? {
+            ...op,
+            task: {
+              ...op.task,
+              ...(op.task.parent === fromId && { parent: toId }),
+              ...(op.task.previous === fromId && { previous: toId }),
+            },
+          }
+        : null;
     case 'reorder':
       return op.taskId === fromId || op.parent === fromId || op.previous === fromId
         ? {

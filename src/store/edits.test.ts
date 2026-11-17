@@ -422,7 +422,12 @@ describe('steps', () => {
     expect(s.entries[id]).toBeUndefined();
     expect(subtasksOf(s.tasks, 'p').at(-1)?.id).toBe(id);
     expect(await ops()).toEqual([
-      { kind: 'create', listId: 'L1', tempId: id, task: { title: 'four', parent: 'p' } },
+      {
+        kind: 'create',
+        listId: 'L1',
+        tempId: id,
+        task: { title: 'four', parent: 'p', previous: 's3' },
+      },
     ]);
   });
 
@@ -434,8 +439,10 @@ describe('steps', () => {
   });
 
   test('a blank step and a step under a subtask are refused', async () => {
-    await expect(addSubtask(store, 'p', '   ', NOW)).rejects.toThrow();
-    await expect(addSubtask(store, 's1', 'nested', NOW)).rejects.toThrow();
+    await expect(addSubtask(store, 'p', '   ', NOW)).rejects.toThrow('A step needs a title');
+    await expect(addSubtask(store, 's1', 'nested', NOW)).rejects.toThrow(
+      'A step cannot have steps of its own',
+    );
     expect(await ops()).toEqual([]);
   });
 
@@ -461,8 +468,10 @@ describe('steps', () => {
 
   test('reordering refuses a parent task and a previous step from elsewhere', async () => {
     await store.commit({ putTasks: [task('q'), task('t1', { parent: 'q' })] });
-    await expect(reorderSubtask(store, 'p', null, NOW)).rejects.toThrow();
-    await expect(reorderSubtask(store, 's1', 't1', NOW)).rejects.toThrow();
+    await expect(reorderSubtask(store, 'p', null, NOW)).rejects.toThrow(
+      'Only a step can be reordered',
+    );
+    await expect(reorderSubtask(store, 's1', 't1', NOW)).rejects.toThrow('is not a step beside');
     expect(await ops()).toEqual([]);
   });
 
@@ -476,5 +485,12 @@ describe('steps', () => {
 
     await store.commit((s) => renameChange(s, 's1', 'real-s1'));
     expect((await ops())[1]).toMatchObject({ previous: 'real-s1' });
+  });
+
+  test('renaming a step also renames it where a queued create names it as previous', async () => {
+    const first = await addSubtask(store, 'p', 'four', NOW);
+    await addSubtask(store, 'p', 'five', NOW);
+    await store.commit((s) => renameChange(s, first, 'real-four'));
+    expect((await ops())[1]).toMatchObject({ task: { parent: 'p', previous: 'real-four' } });
   });
 });

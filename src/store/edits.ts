@@ -282,7 +282,12 @@ export async function addSubtask(
           kind: 'create',
           listId: parent.listId,
           tempId: id,
-          task: { title: trimmed, parent: parent.id },
+          // Google inserts first unless told otherwise, so name the current last step.
+          task: {
+            title: trimmed,
+            parent: parent.id,
+            ...(siblings.length > 0 && { previous: siblings[siblings.length - 1]?.id }),
+          },
         },
       ],
     };
@@ -317,7 +322,11 @@ export async function reorderSubtask(
     return {
       putTasks: s.tasks
         .filter((t) => t.parent === parentId)
-        .map((t) => ({ ...t, position: positions[t.id] as string, updated: now })),
+        .map((t) => ({
+          ...t,
+          position: positions[t.id] as string,
+          ...(t.id === taskId && { updated: now }),
+        })),
       enqueue: [
         {
           kind: 'reorder',

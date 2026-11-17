@@ -6,7 +6,10 @@ const setup = async () => {
   const google = createFakeGoogle({ lists: [{ id: 'L', title: 'L' }] });
   const top = await google.insertTask('L', { title: 'top' });
   const parent = await google.insertTask('L', { title: 'parent' });
-  for (const title of ['a', 'b', 'c']) await google.insertTask('L', { title, parent: parent.id });
+  let previous: string | undefined;
+  for (const title of ['a', 'b', 'c']) {
+    previous = (await google.insertTask('L', { title, parent: parent.id, previous })).id;
+  }
   return { google, top, parent };
 };
 
@@ -17,6 +20,18 @@ const order = (google: Awaited<ReturnType<typeof setup>>['google'], parent: stri
     .map((t) => t.title);
 
 describe('fake subtasks', () => {
+  test('insertTask without previous goes first, with previous goes directly after it', async () => {
+    const { google, parent } = await setup();
+    const id = (title: string) =>
+      [...google.tasks.values()].find((t) => t.title === title)?.id ?? '';
+    await google.insertTask('L', { title: 'first', parent: parent.id });
+    await google.insertTask('L', { title: 'after-a', parent: parent.id, previous: id('a') });
+    expect(order(google, parent.id)).toEqual(['first', 'a', 'after-a', 'b', 'c']);
+    await expect(
+      google.insertTask('L', { title: 'x', parent: parent.id, previous: 'nope' }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   test('a subtask is positioned among its siblings, not the top-level tasks', async () => {
     const { google, parent } = await setup();
     const first = [...google.tasks.values()].find((t) => t.title === 'a');
