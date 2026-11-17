@@ -8,6 +8,7 @@ import {
   deleteTask,
   editTask,
   moveCard,
+  moveCardsToBottom,
   moveCardToBottom,
   moveToList,
   reorderSubtask,
@@ -492,5 +493,124 @@ describe('steps', () => {
     await addSubtask(store, 'p', 'five', NOW);
     await store.commit((s) => renameChange(s, first, 'real-four'));
     expect((await ops())[1]).toMatchObject({ task: { parent: 'p', previous: 'real-four' } });
+  });
+});
+
+describe('moveCardsToBottom', () => {
+  const seed = async (
+    tasks: ReturnType<typeof task>[],
+    entries: Record<string, ReturnType<typeof entry>>,
+  ) => {
+    await store.commit({
+      replaceRemote: { lists: [{ id: 'L1', title: 'One' }], tasks },
+      replaceEntries: entries,
+    });
+  };
+  const order = (column: string) =>
+    Object.entries(store.snapshot().entries)
+      .filter(([, e]) => e.column === column)
+      .sort(([, a], [, b]) => a.rank - b.rank)
+      .map(([id]) => id);
+
+  test('cards from two columns land at the bottom of Next in their previous order, in one save', async () => {
+    await seed([task('a'), task('b'), task('c'), task('n')], {
+      a: entry({ column: 'Backlog', rank: 1 }),
+      b: entry({ column: 'Backlog', rank: 2 }),
+      c: entry({ column: 'Doing', openColumn: 'Doing', rank: 1 }),
+      n: entry({ column: 'Next', openColumn: 'Next', rank: 1 }),
+    });
+    let saves = 0;
+    store.subscribe(() => saves++);
+    await moveCardsToBottom(store, ['c', 'a', 'b'], 'Next', NOW);
+    expect(order('Next')).toEqual(['n', 'a', 'b', 'c']);
+    expect(saves).toBe(1);
+    expect(store.snapshot().entries.a).toMatchObject({ openColumn: 'Next', updatedAt: NOW });
+  });
+
+  test('a card already in the target column stays where it is', async () => {
+    await seed([task('a'), task('n1'), task('n2')], {
+      a: entry({ column: 'Backlog', rank: 1 }),
+      n1: entry({ column: 'Next', openColumn: 'Next', rank: 1 }),
+      n2: entry({ column: 'Next', openColumn: 'Next', rank: 2 }),
+    });
+    await moveCardsToBottom(store, ['n1', 'a'], 'Next', NOW);
+    expect(order('Next')).toEqual(['n1', 'n2', 'a']);
+    expect(store.snapshot().entries.n1?.updatedAt).not.toBe(NOW);
+  });
+
+  test('moving many into Done completes each, clears each pin and queues one patch per card', async () => {
+    await seed([task('a'), task('b')], {
+      a: entry({ column: 'Backlog', rank: 1, pinned: true }),
+      b: entry({ column: 'Doing', openColumn: 'Doing', rank: 1, pinned: true }),
+    });
+    await moveCardsToBottom(store, ['a', 'b'], 'Done', NOW);
+    const s = store.snapshot();
+    expect(s.entries.a).toMatchObject({ column: 'Done', openColumn: 'Backlog', pinned: false });
+    expect(s.entries.b).toMatchObject({ column: 'Done', openColumn: 'Doing', pinned: false });
+    expect(
+      s.tasks
+        .filter((t) => t.completed)
+        .map((t) => t.id)
+        .sort(),
+    ).toEqual(['a', 'b']);
+    expect(await ops()).toEqual([
+      {
+        kind: 'patch',
+        listId: 'L1',
+        taskId: 'a',
+        set: { completed: true },
+        base: { completed: false },
+      },
+      {
+        kind: 'patch',
+        listId: 'L1',
+        taskId: 'b',
+        set: { completed: true },
+        base: { completed: false },
+      },
+    ]);
+  });
+
+  test('moving many out of Done reopens each and queues completed:false once per card', async () => {
+    await seed(
+      [
+        task('a', { completed: true, completedAt: OLD_DONE }),
+        task('b', { completed: true, completedAt: OLD_DONE }),
+        task('w'),
+      ],
+      {
+        a: entry({ column: 'Done', openColumn: 'Backlog', rank: 1 }),
+        b: entry({ column: 'Done', openColumn: 'Doing', rank: 2 }),
+        w: entry({ column: 'Waiting', openColumn: 'Waiting', rank: 5 }),
+      },
+    );
+    await moveCardsToBottom(store, ['a', 'b'], 'Waiting', NOW);
+    expect(order('Waiting')).toEqual(['w', 'a', 'b']);
+    expect(store.snapshot().tasks.some((t) => t.completed)).toBe(false);
+    expect(
+      (await ops()).map((o) => (o.kind === 'patch' ? `${o.taskId}:${o.set.completed}` : o.kind)),
+    ).toEqual(['a:false', 'b:false']);
+  });
+
+  test('an unknown or deleted id in the selection is skipped and the rest still move', async () => {
+    await seed([task('a')], { a: entry({ column: 'Backlog', rank: 1 }) });
+    await moveCardsToBottom(store, ['gone', 'a'], 'Next', NOW);
+    expect(order('Next')).toEqual(['a']);
+  });
+
+  test('a temporary id renamed by a replay is resolved', async () => {
+    await seed([task('a')], { a: entry({ column: 'Backlog', rank: 1 }) });
+    await store.commit((s) => renameChange(s, 'a', 'real-a'));
+    await moveCardsToBottom(store, ['a'], 'Next', NOW);
+    expect(order('Next')).toEqual(['real-a']);
+  });
+
+  test('nothing to move saves nothing', async () => {
+    await seed([task('n')], { n: entry({ column: 'Next', openColumn: 'Next', rank: 1 }) });
+    let saves = 0;
+    store.subscribe(() => saves++);
+    await moveCardsToBottom(store, ['n', 'gone'], 'Next', NOW);
+    expect(saves).toBe(0);
+    expect(await ops()).toEqual([]);
   });
 });

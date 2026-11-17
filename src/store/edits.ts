@@ -1,7 +1,13 @@
 import { completeEntry, placeInColumn, ranksIn, reopenEntry } from '../domain/board';
 import { appendRank } from '../domain/rank';
 import { renumber, subtasksOf } from '../domain/subtasks';
-import type { BoardEntries, BoardEntry, Column, Task } from '../domain/types';
+import {
+  type BoardEntries,
+  type BoardEntry,
+  COLUMNS,
+  type Column,
+  type Task,
+} from '../domain/types';
 import type { TaskPatch } from '../google/api';
 import type { Change, Snapshot, Store } from './db';
 
@@ -194,6 +200,59 @@ export async function moveCardToBottom(
     if (entry?.column === column && (!last || last[1].rank < entry.rank)) return {};
     return moveChange(s, taskId, column, last?.[0] ?? null, now);
   });
+}
+
+// One save for the whole selection: each card's change is built on the state the
+// previous card left, so ranks and Done rules match moving them one by one.
+export async function moveCardsToBottom(
+  store: Store,
+  requestedIds: readonly string[],
+  column: Column,
+  now: string,
+): Promise<void> {
+  await store.commit((s) => {
+    const ids = [...new Set(requestedIds.map((id) => resolveId(s, id)))];
+    const moving = ids
+      .flatMap((id) => {
+        const entry = s.entries[id];
+        const known = s.tasks.some((t) => t.id === id);
+        return entry && known && entry.column !== column ? [{ id, entry }] : [];
+      })
+      .sort(
+        (a, b) =>
+          COLUMNS.indexOf(a.entry.column) - COLUMNS.indexOf(b.entry.column) ||
+          a.entry.rank - b.entry.rank,
+      );
+
+    let working = s;
+    const merged: Required<Pick<Change, 'putTasks' | 'entries' | 'enqueue'>> = {
+      putTasks: [],
+      entries: {},
+      enqueue: [],
+    };
+    let after = column === 'Done' ? null : (bottomOf(s, column) ?? null);
+    for (const { id } of moving) {
+      const change = moveChange(working, id, column, after, now);
+      const put = change.putTasks ?? [];
+      working = {
+        ...working,
+        tasks: working.tasks.map((t) => put.find((p) => p.id === t.id) ?? t),
+        entries: { ...working.entries, ...change.entries },
+      };
+      merged.putTasks = [...merged.putTasks.filter((t) => !put.some((p) => p.id === t.id)), ...put];
+      merged.entries = { ...merged.entries, ...change.entries };
+      merged.enqueue = [...merged.enqueue, ...(change.enqueue ?? [])];
+      after = id;
+    }
+    return moving.length === 0 ? {} : merged;
+  });
+}
+
+function bottomOf(s: Snapshot, column: Column): string | undefined {
+  return Object.entries(s.entries)
+    .filter(([, e]) => e.column === column)
+    .sort(([, a], [, b]) => a.rank - b.rank)
+    .at(-1)?.[0];
 }
 
 export async function setPinned(
