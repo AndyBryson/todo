@@ -1,13 +1,15 @@
 # Setting up Todo
 
-Steps 1 to 3 are one-off work in Google's consoles and need doing before the app can sign you in. Do them first, then tell me the client ID and I will check the app against your real account.
+Steps 1 to 3 are one-off work in Google's consoles and need doing before the app can sign you in. They are done for the live app; the client ID is already in `src/config.ts`. Repeat them only if you set the app up in a new Google Cloud project.
 
 Google will not publish the consent screen (step 2) until the privacy page loads, and that page is served by GitHub Pages (step 4). If Pages is not set up yet, do step 4 first.
 
 ## 1. Google Cloud project
 
 1. Go to <https://console.cloud.google.com/> and create a project called `todo`.
-2. With `todo` selected, open **APIs & Services → Library**. Enable **Google Tasks API**, then **Google Drive API**.
+2. With `todo` selected, open **APIs & Services → Library**. Enable **Google Tasks API**, then **Google Drive API**. Both are needed: Tasks for the tasks, Drive for the board data.
+
+If the app signs in but the header shows an error ending in "failed with 403", an API is not enabled. Google's message names it. Enable it, wait a few minutes for Google to catch up, and the app recovers on its next sync without signing in again.
 
 ## 2. OAuth consent screen
 

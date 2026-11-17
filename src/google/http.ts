@@ -10,6 +10,8 @@ import {
   type TaskPatch,
 } from './api';
 
+// Checked against live Google on 2026-11-17: tasks.move keeps the task ID and takes subtasks
+// with it; completedMin returns completed tasks only; every Drive upload bumps the file version.
 const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -53,7 +55,7 @@ function toTask(listId: string, g: GoogleTask): Task {
   };
 }
 
-// Google can still return a recently deleted task, with a 200, instead of a 404.
+// Google returns a recently deleted task with a 200 and deleted: true, not a 404 (seen live).
 function live(listId: string, g: GoogleTask): Task {
   if (g.deleted === true) throw new NotFoundError(`task ${g.id} in ${listId} is deleted`);
   return toTask(listId, g);
