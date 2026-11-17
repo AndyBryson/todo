@@ -2,6 +2,8 @@
 
 Steps 1 to 3 are one-off work in Google's consoles and need doing before the app can sign you in. Do them first, then tell me the client ID and I will check the app against your real account.
 
+Google will not publish the consent screen (step 2) until the privacy page loads, and that page is served by GitHub Pages (step 4). If Pages is not set up yet, do step 4 first.
+
 ## 1. Google Cloud project
 
 1. Go to <https://console.cloud.google.com/> and create a project called `todo`.
@@ -14,7 +16,13 @@ Steps 1 to 3 are one-off work in Google's consoles and need doing before the app
 3. Add exactly these two scopes:
    - `https://www.googleapis.com/auth/tasks`
    - `https://www.googleapis.com/auth/drive.appdata`
-4. Publish the app so its status is **In production**. You do not need to add yourself as a test user once it is in production. Testing mode would make Google expire your sign-in every 7 days.
+4. On the **Branding** page, fill in:
+   - Application home page: `https://andybryson.github.io/todo`
+   - Application privacy policy link: `https://andybryson.github.io/todo/privacy.html`
+   - Authorised domain: `andybryson.github.io`
+
+   Terms of service is optional. Open the privacy link in a browser first: Google rejects a link that does not load or is not on the authorised domain. The page is `public/privacy.html` in this repo.
+5. Open **Audience → Publish app → Confirm** so the status is **In production**. If it offers verification, skip it. You do not need to add yourself as a test user once it is in production. Testing mode would make Google expire your sign-in every 7 days.
 
 Because the app is not verified by Google, the first sign-in shows a warning: "Google hasn't verified this app". It is your own app, so this is expected. Choose **Advanced → Go to Todo (unsafe)** and then allow access. You only do this once per device.
 
@@ -32,9 +40,9 @@ Because the app is not verified by Google, the first sign-in shows a warning: "G
 
 The repo `AndyBryson/todo` already exists.
 
-1. Push the branch you want to publish.
-2. In the repo, open **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. Wait for the workflow to finish. The app is then at <https://andybryson.github.io/todo/>.
+1. In the repo, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. Push `main`. Every push to `main` runs the checks and deploys. If you pushed before setting the source, re-run the latest workflow from the **Actions** tab.
+3. Wait for the workflow to finish. The app is then at <https://andybryson.github.io/todo/> and the privacy page at <https://andybryson.github.io/todo/privacy.html>.
 
 ## 5. Install
 
