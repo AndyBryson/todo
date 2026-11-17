@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { listColour } from '../domain/board';
-import type { BoardFilters } from '../domain/filters';
+import { type BoardFilters, toggleListFilter } from '../domain/filters';
 import type { TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
 
@@ -14,11 +14,14 @@ interface Props {
 
 export function Sidebar({ lists, filters, onFilters, selecting, onToggleSelect }: Props) {
   function toggleList(id: string) {
-    const next = new Set(filters.lists ?? []);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    // Ticking every list is the same as ticking none.
-    onFilters({ ...filters, lists: next.size === 0 || next.size === lists.length ? null : next });
+    onFilters({
+      ...filters,
+      lists: toggleListFilter(
+        filters.lists,
+        id,
+        lists.map((l) => l.id),
+      ),
+    });
   }
 
   return (
@@ -30,7 +33,7 @@ export function Sidebar({ lists, filters, onFilters, selecting, onToggleSelect }
             <label class="check" style={{ '--chip': listColour(list.id) }}>
               <input
                 type="checkbox"
-                checked={filters.lists?.has(list.id) ?? false}
+                checked={filters.lists?.has(list.id) ?? true}
                 onChange={() => toggleList(list.id)}
               />
               <span class="dot" />

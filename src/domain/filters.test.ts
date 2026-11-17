@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { activeFilterCount, type BoardFilters, cardVisible, DEFAULT_FILTERS } from './filters';
+import {
+  activeFilterCount,
+  type BoardFilters,
+  cardVisible,
+  DEFAULT_FILTERS,
+  toggleListFilter,
+} from './filters';
 import { entry, task } from './test-fixtures';
 
 const TODAY = '2026-11-17';
@@ -86,5 +92,26 @@ describe('activeFilterCount', () => {
         priorities: new Set(['low', 'lowest']),
       }),
     ).toBe(2);
+  });
+});
+
+describe('toggleListFilter', () => {
+  const all = ['a', 'b', 'c'];
+
+  test('unticking one from all gives all except that one', () => {
+    expect(toggleListFilter(null, 'b', all)).toEqual(new Set(['a', 'c']));
+  });
+
+  test('ticking the last unticked list returns to all', () => {
+    expect(toggleListFilter(new Set(['a', 'c']), 'b', all)).toBeNull();
+  });
+
+  test('unticking the only ticked list returns to all, not nothing', () => {
+    expect(toggleListFilter(new Set(['a']), 'a', all)).toBeNull();
+  });
+
+  test('adds and removes within a partial selection', () => {
+    expect(toggleListFilter(new Set(['a']), 'b', all)).toEqual(new Set(['a', 'b']));
+    expect(toggleListFilter(new Set(['a', 'b']), 'b', all)).toEqual(new Set(['a']));
   });
 });

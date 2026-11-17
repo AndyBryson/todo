@@ -32,3 +32,16 @@ export function activeFilterCount(filters: BoardFilters): number {
   const prioritiesNarrowed = PRIORITIES.some((p) => !filters.priorities.has(p));
   return (prioritiesNarrowed ? 1 : 0) + (filters.planned.on ? 1 : 0);
 }
+
+// null means every list is shown, so every box reads as ticked. Unticking the
+// only ticked list returns to null rather than showing nothing.
+export function toggleListFilter(
+  current: ReadonlySet<string> | null,
+  id: string,
+  allIds: readonly string[],
+): ReadonlySet<string> | null {
+  const next = new Set(current ?? allIds);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next.size === 0 || next.size === allIds.length ? null : next;
+}
