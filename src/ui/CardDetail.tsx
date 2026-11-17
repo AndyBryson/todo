@@ -10,6 +10,7 @@ import {
   setCompleted,
   setPinned,
 } from '../store/edits';
+import { Checklist } from './Checklist';
 import { useIsPhone } from './hooks';
 
 export type DetailView = 'board' | 'today';
@@ -42,14 +43,16 @@ interface Props {
 }
 
 interface FieldProps {
-  label: string;
+  label?: string;
+  // Names the field when it sits inline without a visible label.
+  ariaLabel?: string;
   saved: string;
   multiline?: boolean;
   onSave(value: string): void;
 }
 
 // The draft exists only while focused, so a background sync cannot overwrite typing.
-function DraftField({ label, saved, multiline, onSave }: FieldProps) {
+export function DraftField({ label, ariaLabel, saved, multiline, onSave }: FieldProps) {
   const id = useId();
   const [draft, setDraftState] = useState<string | null>(null);
   // Refs let the unmount cleanup see the latest values; blur and cleanup share one flush.
@@ -70,6 +73,7 @@ function DraftField({ label, saved, multiline, onSave }: FieldProps) {
 
   const shared = {
     id,
+    'aria-label': ariaLabel,
     value: draft ?? saved,
     onFocus: () => setDraft(saved),
     onInput: (e: Event) => setDraft((e.target as HTMLInputElement | HTMLTextAreaElement).value),
@@ -80,7 +84,7 @@ function DraftField({ label, saved, multiline, onSave }: FieldProps) {
   };
   return (
     <div class="field">
-      <label for={id}>{label}</label>
+      {label && <label for={id}>{label}</label>}
       {multiline ? <textarea rows={6} {...shared} /> : <input type="text" {...shared} />}
     </div>
   );
@@ -163,9 +167,6 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
   }
 
   const entry = snapshot.entries[task.id];
-  const subtasks = snapshot.tasks
-    .filter((t) => t.parent === task.id)
-    .sort((a, b) => (a.position < b.position ? -1 : a.position > b.position ? 1 : 0));
 
   const changeColumn = (column: Column) =>
     void act(() => moveCardToBottom(store, task.id, column, new Date().toISOString()));
@@ -282,23 +283,8 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
         Completed
       </label>
 
-      {subtasks.length > 0 && (
-        <fieldset class="subtasks">
-          <legend>Subtasks</legend>
-          {subtasks.map((s) => (
-            <label key={s.id} class="check">
-              <input
-                type="checkbox"
-                checked={s.completed}
-                onChange={(e) => {
-                  const completed = e.currentTarget.checked;
-                  void act(() => setCompleted(store, s.id, completed, new Date().toISOString()));
-                }}
-              />
-              {s.title}
-            </label>
-          ))}
-        </fieldset>
+      {task.parent === null && (
+        <Checklist parent={task} snapshot={snapshot} store={store} act={act} />
       )}
 
       <button type="button" class="danger" onClick={() => void remove()}>

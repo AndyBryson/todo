@@ -24,6 +24,15 @@ export function Card({ card, now, onOpen }: Props) {
               {formatDue(task.due)}
             </time>
           )}
+          {card.steps && (
+            <span
+              class="steps-count"
+              role="img"
+              aria-label={`${card.steps.done} of ${card.steps.total} steps done`}
+            >
+              {card.steps.done}/{card.steps.total}
+            </span>
+          )}
           {entry.pinned && (
             <span class="pin" role="img" aria-label="Pinned to Today">
               ★

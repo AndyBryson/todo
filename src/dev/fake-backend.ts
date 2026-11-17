@@ -50,6 +50,12 @@ export function createFakeBackend(): { google: FakeGoogle; auth: Auth } {
       task('w2', 'work', 'Plan team offsite', { due: localDate(0) }),
       task('w2a', 'work', 'Shortlist venues', { parent: 'w2' }),
       task('w2b', 'work', 'Send options to the team', { parent: 'w2' }),
+      task('w2c', 'work', 'Book the venue', { parent: 'w2' }),
+      task('w2d', 'work', 'Order lunch', {
+        parent: 'w2',
+        completed: true,
+        completedAt: hoursAgo(2),
+      }),
       task('w3', 'work', 'Review pull requests'),
       task('w4', 'work', 'Send invoice', {
         completed: true,

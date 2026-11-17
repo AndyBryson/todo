@@ -514,3 +514,54 @@ button {
     padding-bottom: calc(var(--bar-h) + 2rem + env(safe-area-inset-bottom));
   }
 }
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.step .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.step.done input[type="text"] {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.step-handle,
+.step-delete {
+  flex: none;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+}
+
+.step-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.step-add {
+  width: 100%;
+  margin-top: 0.5rem;
+  box-sizing: border-box;
+}
+
+.steps-count {
+  font-variant-numeric: tabular-nums;
+}
