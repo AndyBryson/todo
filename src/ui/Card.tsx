@@ -2,7 +2,7 @@ import type { Card as CardData } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
 import { priorityOf } from '../domain/priority';
 
-const MARKERS = {
+export const MARKERS = {
   highest: { glyph: '▲▲', label: 'Priority: Highest', tone: 'high' },
   high: { glyph: '▲', label: 'Priority: High', tone: 'high' },
   low: { glyph: '▼', label: 'Priority: Low', tone: 'low' },

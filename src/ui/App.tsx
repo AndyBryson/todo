@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
+import { PRIORITIES, type Priority } from '../domain/types';
 import type { Auth } from '../google/auth';
 import type { Store } from '../store/db';
 import { addTask } from '../store/edits';
@@ -7,8 +9,8 @@ import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
 import { useIsPhone, useSnapshot, useSyncStatus } from './hooks';
-import { ListFilter } from './ListFilter';
 import { PhoneNav } from './PhoneNav';
+import { Sidebar, SidebarDrawer } from './Sidebar';
 import { Today } from './Today';
 
 const FILTER_KEY = 'todo.filter';
@@ -32,6 +34,47 @@ function saveFilter(filter: Set<string> | null) {
   }
 }
 
+const PRIORITIES_KEY = 'todo.priorities';
+const PLANNED_KEY = 'todo.planned';
+
+function loadPriorities(): ReadonlySet<Priority> {
+  try {
+    const raw = localStorage.getItem(PRIORITIES_KEY);
+    const levels: unknown = raw ? JSON.parse(raw) : null;
+    // An empty array is a real choice (nothing shown); only a missing or malformed value falls back.
+    if (!Array.isArray(levels)) return DEFAULT_FILTERS.priorities;
+    return new Set(PRIORITIES.filter((p) => levels.includes(p)));
+  } catch {
+    return DEFAULT_FILTERS.priorities;
+  }
+}
+
+function loadPlanned(): BoardFilters['planned'] {
+  try {
+    const raw = localStorage.getItem(PLANNED_KEY);
+    const value: unknown = raw ? JSON.parse(raw) : null;
+    if (typeof value !== 'object' || value === null) return DEFAULT_FILTERS.planned;
+    const { on, days } = value as Record<string, unknown>;
+    return {
+      on: on === true,
+      days:
+        typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 365
+          ? days
+          : DEFAULT_FILTERS.planned.days,
+    };
+  } catch {
+    return DEFAULT_FILTERS.planned;
+  }
+}
+
+function save(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be blocked; the setting then lasts for this visit only.
+  }
+}
+
 function readRoute(): { view: DetailView; taskId: string | null } {
   const [, view, kind, id] = location.hash.split('/');
   return {
@@ -52,6 +95,10 @@ export function App({ store, engine, auth }: Props) {
   const phone = useIsPhone();
   const [{ view, taskId }, setRoute] = useState(readRoute);
   const [filter, setFilter] = useState(loadFilter);
+  const [priorities, setPriorities] = useState(loadPriorities);
+  const [planned, setPlanned] = useState(loadPlanned);
+  const [selecting, setSelecting] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -62,6 +109,18 @@ export function App({ store, engine, auth }: Props) {
   }, []);
 
   useEffect(() => () => clearTimeout(errorTimer.current), []);
+
+  // Select mode and the drawer belong to the board; Today never shows them.
+  useEffect(() => {
+    if (view !== 'board') {
+      setSelecting(false);
+      setDrawerOpen(false);
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (!phone) setDrawerOpen(false);
+  }, [phone]);
 
   const showError = useCallback((e: unknown) => {
     setActionError(e instanceof Error ? e.message : String(e));
@@ -99,10 +158,40 @@ export function App({ store, engine, auth }: Props) {
     return kept.size > 0 ? kept : null;
   }, [filter, snapshot.lists]);
 
-  function changeFilter(next: Set<string> | null) {
-    setFilter(next);
-    saveFilter(next);
+  const filters = useMemo<BoardFilters>(
+    () => ({ lists: effectiveFilter, priorities, planned }),
+    [effectiveFilter, priorities, planned],
+  );
+
+  function changeFilters(next: BoardFilters) {
+    if (next.lists !== filters.lists) {
+      const lists = next.lists ? new Set(next.lists) : null;
+      setFilter(lists);
+      saveFilter(lists);
+    }
+    if (next.priorities !== filters.priorities) {
+      setPriorities(next.priorities);
+      save(PRIORITIES_KEY, [...next.priorities]);
+    }
+    if (next.planned !== filters.planned) {
+      setPlanned(next.planned);
+      save(PLANNED_KEY, next.planned);
+    }
   }
+
+  function toggleSelect() {
+    // The drawer would cover the cards that are about to become tappable.
+    if (!selecting) setDrawerOpen(false);
+    setSelecting(!selecting);
+  }
+
+  const sidebarProps = {
+    lists: snapshot.lists,
+    filters,
+    onFilters: changeFilters,
+    selecting,
+    onToggleSelect: toggleSelect,
+  };
 
   async function signIn() {
     try {
@@ -124,22 +213,28 @@ export function App({ store, engine, auth }: Props) {
         onSignIn={() => void signIn()}
         onDismiss={(id) => void store.dismissNotice(id)}
       />
-      {view === 'board' && (
-        <ListFilter lists={snapshot.lists} selected={effectiveFilter} onChange={changeFilter} />
+      <div class={view === 'board' && !phone ? 'with-sidebar' : undefined}>
+        {view === 'board' && !phone && <Sidebar {...sidebarProps} />}
+        <main class="main">
+          {view === 'today' ? (
+            <Today store={store} snapshot={snapshot} phone={phone} act={act} />
+          ) : (
+            <Board
+              store={store}
+              snapshot={snapshot}
+              filters={filters}
+              phone={phone}
+              act={act}
+              selecting={selecting}
+              onSelecting={setSelecting}
+              onOpenDrawer={() => setDrawerOpen(true)}
+            />
+          )}
+        </main>
+      </div>
+      {view === 'board' && phone && (
+        <SidebarDrawer {...sidebarProps} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       )}
-      <main class="main">
-        {view === 'today' ? (
-          <Today store={store} snapshot={snapshot} phone={phone} act={act} />
-        ) : (
-          <Board
-            store={store}
-            snapshot={snapshot}
-            filter={effectiveFilter}
-            phone={phone}
-            act={act}
-          />
-        )}
-      </main>
       {phone && (
         <PhoneNav
           route={view}
