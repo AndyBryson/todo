@@ -71,7 +71,7 @@ export function createAuth(clientId: string): Auth {
   };
   const fresh = (margin: number) => token !== null && expiresAt - Date.now() > margin;
 
-  async function request(prompt: '' | 'consent', timeoutMs?: number): Promise<void> {
+  async function request(timeoutMs?: number): Promise<void> {
     await loadScript();
     client ??= google.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -108,7 +108,9 @@ export function createAuth(clientId: string): Auth {
             reject(new AuthError('Silent sign-in timed out'));
           }, timeoutMs);
         }
-        c.requestAccessToken({ prompt });
+        // Google shows the consent screen by itself when access is not yet granted.
+        // Forcing it with 'consent' lost the popup's reply, so sign-in never finished.
+        c.requestAccessToken({ prompt: '' });
       });
     } finally {
       clearTimeout(timer);
@@ -122,7 +124,7 @@ export function createAuth(clientId: string): Auth {
       if (!hasConsented()) throw new AuthError('Sign in needed');
       silent ??= (async () => {
         try {
-          await request('', SILENT_TIMEOUT_MS);
+          await request(SILENT_TIMEOUT_MS);
           return token as string;
         } catch (e) {
           // A failed renewal must not discard a token that still works.
@@ -139,7 +141,7 @@ export function createAuth(clientId: string): Auth {
     },
 
     async signIn() {
-      await request(hasConsented() ? '' : 'consent');
+      await request();
       notify();
     },
 
