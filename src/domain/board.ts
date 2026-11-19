@@ -220,16 +220,44 @@ const PALETTE = [
   '#0090ff',
   '#6e56cf',
   '#d6409f',
+  '#00a2c7',
+  '#3e63dd',
+  '#8e4ec6',
+  '#ad7f58',
+  '#74a72a',
+  '#b03a5b',
 ] as const;
 
 // FNV-1a, 32-bit. A hash rather than list order, so a list keeps its colour when others are added.
-export function listColour(listId: string): string {
+function colourSlot(listId: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < listId.length; i++) {
     hash ^= listId.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return PALETTE[hash % PALETTE.length] as string;
+  return hash % PALETTE.length;
+}
+
+// Each list starts at its hashed colour and steps on to the next free one on a clash.
+// Claims go in ID order, not display order, so every device and screen agrees, and a new
+// list only moves another list's colour when the two clash.
+export function listColours(listIds: string[]): Record<string, string> {
+  const taken = new Set<number>();
+  const out: Record<string, string> = {};
+  for (const id of [...new Set(listIds)].sort()) {
+    const start = colourSlot(id);
+    let slot = start;
+    for (let i = 0; i < PALETTE.length; i++) {
+      const candidate = (start + i) % PALETTE.length;
+      if (!taken.has(candidate)) {
+        slot = candidate;
+        break;
+      }
+    }
+    taken.add(slot);
+    out[id] = PALETTE[slot] as string;
+  }
+  return out;
 }
 
 export function buildBoard(
@@ -246,6 +274,7 @@ export function buildBoard(
     Done: [],
   };
   const today = localDate(now);
+  const colours = listColours(lists.map((l) => l.id));
   const doneSince = now.getTime() - DONE_WINDOW_MS;
   const stepCounts = new Map<string, { done: number; total: number }>();
   for (const t of tasks) {
@@ -266,7 +295,7 @@ export function buildBoard(
       task: t,
       list,
       entry: e,
-      colour: listColour(t.listId),
+      colour: colours[t.listId] as string,
       steps: stepCounts.get(t.id) ?? null,
     });
   }

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   buildBoard,
   completeEntry,
-  listColour,
+  listColours,
   mergeEntries,
   openTaskCount,
   parseBoardFile,
@@ -360,11 +360,35 @@ describe('placeInColumn', () => {
   });
 });
 
-describe('listColour', () => {
-  test('is stable for an ID and differs between IDs', () => {
-    expect(listColour('MTIzNDU')).toBe(listColour('MTIzNDU'));
-    const colours = new Set(['a', 'b', 'c', 'd', 'e', 'f'].map(listColour));
-    expect(colours.size).toBeGreaterThan(1);
+describe('listColours', () => {
+  // Enough IDs that some must share a hashed slot.
+  const ids = Array.from({ length: 14 }, (_, i) => `list-${i}`);
+
+  test('gives every list a different colour while the palette lasts', () => {
+    const colours = listColours(ids);
+    expect(Object.keys(colours)).toHaveLength(14);
+    expect(new Set(Object.values(colours)).size).toBe(14);
+  });
+
+  test('does not depend on the order lists arrive in', () => {
+    expect(listColours([...ids].reverse())).toEqual(listColours(ids));
+  });
+
+  test('a list keeps its colour when a list it does not clash with is added', () => {
+    const before = listColours(['a', 'b']);
+    const used = new Set(Object.values(before));
+    const extra = Array.from({ length: 50 }, (_, i) => `z${i}`).find(
+      (id) => !used.has(listColours([id])[id] as string),
+    ) as string;
+    const after = listColours(['a', 'b', extra]);
+    expect(after.a).toBe(before.a);
+    expect(after.b).toBe(before.b);
+  });
+
+  test('still colours every list when there are more lists than colours', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `x${i}`);
+    const colours = listColours(many);
+    expect(many.every((id) => typeof colours[id] === 'string')).toBe(true);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Notice, Snapshot } from '../store/db';
 import type { SyncStatus } from '../sync/engine';
+import { listColours } from './board';
 import type { BoardEntries, Task, TaskList } from './types';
 
 export interface AccountView {
@@ -15,6 +16,7 @@ export interface Merged {
   listAccount: Record<string, string>;
   taskAccount: Record<string, string>;
   listName: Record<string, string>;
+  listColour: Record<string, string>;
   notices: (Notice & { accountId: string })[];
   queueLength: number;
   // Temporary IDs are unique across accounts, so one map serves every open screen.
@@ -30,6 +32,7 @@ export function mergeViews(views: AccountView[]): Merged {
     listAccount: {},
     taskAccount: {},
     listName: {},
+    listColour: {},
     notices: [],
     queueLength: 0,
     renamed: {},
@@ -67,6 +70,7 @@ export function mergeViews(views: AccountView[]): Merged {
     merged.queueLength += s.queueLength;
     Object.assign(merged.renamed, s.renamed);
   }
+  merged.listColour = listColours(merged.lists.map((l) => l.id));
   return merged;
 }
 

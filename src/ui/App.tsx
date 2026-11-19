@@ -306,6 +306,7 @@ export function App({ accounts, workspace }: Props) {
     })),
     tasks: merged.tasks,
     listName: merged.listName,
+    listColour: merged.listColour,
     allListIds: merged.lists.map((l) => l.id),
     onCreateList: (accountId: string, title: string) =>
       listChange('create the list', async () => {

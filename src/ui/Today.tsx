@@ -1,5 +1,4 @@
 import type { Workspace } from '../accounts/workspace';
-import { listColour } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
 import type { BoardFilters } from '../domain/filters';
 import type { Merged } from '../domain/merge';
@@ -29,7 +28,7 @@ export function Today({ workspace, merged, filters, phone, act, onAdd }: Props) 
   ].filter((s) => s.tasks.length > 0);
 
   const row = (t: Task) => (
-    <li class="today-row" key={t.id} style={{ '--list': listColour(t.listId) }}>
+    <li class="today-row" key={t.id} style={{ '--list': merged.listColour[t.listId] }}>
       <input
         type="checkbox"
         aria-label={`Complete “${t.title}”`}

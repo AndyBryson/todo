@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { listColour, openTaskCount } from '../domain/board';
+import { openTaskCount } from '../domain/board';
 import { type BoardFilters, toggleListFilter } from '../domain/filters';
 import type { Task, TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
@@ -20,6 +20,7 @@ interface Props {
   accounts: SidebarAccount[];
   tasks: Task[];
   listName: Record<string, string>;
+  listColour: Record<string, string>;
   allListIds: string[];
   filters: BoardFilters;
   onFilters(next: BoardFilters): void;
@@ -87,6 +88,7 @@ export function Sidebar({
   accounts,
   tasks,
   listName,
+  listColour,
   allListIds,
   filters,
   onFilters,
@@ -156,7 +158,7 @@ export function Sidebar({
               {account.lists.map((list) => (
                 <li
                   key={list.id}
-                  style={{ '--chip': listColour(list.id) }}
+                  style={{ '--chip': listColour[list.id] }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     // The context-menu key reports no pointer position; open under the row instead.
