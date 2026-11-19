@@ -128,7 +128,9 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
       return id;
     },
 
-    editTask: (id, input) => edits.editTask(taskOwner(id).store, id, input),
+    async editTask(id, input) {
+      await edits.editTask(taskOwner(id).store, id, input);
+    },
 
     async setCompleted(id, completed, now) {
       const owner = taskOwner(id);
@@ -184,13 +186,22 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
       }
     },
 
-    setPinned: (id, pinned, now) => edits.setPinned(taskOwner(id).store, id, pinned, now),
-    setPriority: (id, priority, now) => edits.setPriority(taskOwner(id).store, id, priority, now),
-    deleteTask: (id) => edits.deleteTask(taskOwner(id).store, id),
-    addSubtask: (parentId, title, now) =>
-      edits.addSubtask(taskOwner(parentId).store, parentId, title, now),
-    reorderSubtask: (id, previousId, now) =>
-      edits.reorderSubtask(taskOwner(id).store, id, previousId, now),
+    // Async so a missing owner rejects like any other failed edit rather than throwing.
+    async setPinned(id, pinned, now) {
+      await edits.setPinned(taskOwner(id).store, id, pinned, now);
+    },
+    async setPriority(id, priority, now) {
+      await edits.setPriority(taskOwner(id).store, id, priority, now);
+    },
+    async deleteTask(id) {
+      await edits.deleteTask(taskOwner(id).store, id);
+    },
+    async addSubtask(parentId, title, now) {
+      return edits.addSubtask(taskOwner(parentId).store, parentId, title, now);
+    },
+    async reorderSubtask(id, previousId, now) {
+      await edits.reorderSubtask(taskOwner(id).store, id, previousId, now);
+    },
 
     canMoveTo(id, toListId) {
       const owner = taskOwner(id);

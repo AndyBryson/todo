@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import { task } from '../domain/test-fixtures';
-import { HttpError } from '../google/api';
+import { AuthError, HttpError } from '../google/api';
 import { createFakeGoogle } from '../google/fake';
 import { openStore } from '../store/db';
 import { editTask } from '../store/edits';
@@ -157,4 +157,50 @@ test('a token whose account cannot be confirmed is never used', async () => {
   await a?.engine.syncNow();
   expect(google.tasks.get('x')?.title).toBe('Renamed offline');
   expect(a?.engine.status().kind).toBe('synced');
+});
+
+test('a renewal to another account mid-session sends nothing with the new token', async () => {
+  const google = createFakeGoogle({ lists: LISTS, tasks: [task('x')] });
+  const { set, auths, identities, sent } = await harness({
+    records: [record('a', 'me@example.com')],
+    googles: { a: google },
+  });
+  running = set;
+  const a = set.get('a');
+  await a?.engine.syncNow();
+  expect(a?.engine.status().kind).toBe('synced');
+
+  // A quiet renewal that comes back with someone else's token.
+  await auths.get('a')?.signIn();
+  identities.set('token-2', { email: 'other@example.com', name: 'Other' });
+  await expect(a?.google.listTaskLists()).rejects.toBeInstanceOf(AuthError);
+
+  expect(sent.filter((s) => s.token === 'token-2').map((s) => s.method)).toEqual(['getAccount']);
+  expect(auths.get('a')?.forgets).toBe(1);
+  expect(a?.store.snapshot().notices.map((n) => n.text)).toEqual([
+    'Signed in as other@example.com, not me@example.com. Sign in again.',
+  ]);
+});
+
+test('a record still learning its email cannot become a second copy of an account', async () => {
+  const shared = createFakeGoogle({
+    lists: [{ id: 'T1', title: 'Theirs' }],
+    account: { email: 'shared@example.com', name: 'Shared' },
+  });
+  const { set, auths, storage } = await harness({
+    records: [record('a', null, 'todo'), record('b', 'shared@example.com')],
+    googles: { a: shared, b: shared },
+  });
+  running = set;
+  const a = set.get('a');
+  await a?.engine.syncNow();
+
+  expect(auths.get('a')?.forgets).toBe(1);
+  expect(a?.store.snapshot().notices.map((n) => n.text)).toEqual([
+    'This Google account is already signed in.',
+  ]);
+  expect(a?.record.email).toBeNull();
+  expect(loadRegistry(storage)[0]?.email).toBeNull();
+  expect(a?.engine.status()).toEqual({ kind: 'signin' });
+  expect(a?.store.snapshot().lists).toEqual([]);
 });

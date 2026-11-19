@@ -1,4 +1,4 @@
-import { AuthError } from '../google/api';
+import { AuthError, type GoogleApi } from '../google/api';
 import type { Auth } from '../google/auth';
 import type { FakeGoogle } from '../google/fake';
 import { openStore } from '../store/db';
@@ -71,21 +71,45 @@ export async function harness(opts: {
   if (opts.records) storage.setItem('todo.accounts', JSON.stringify(opts.records));
   const prefix = opts.prefix ?? `test-${crypto.randomUUID()}`;
   const auths = new Map<string, FakeAuth>();
+  // Who a token belongs to, when a test wants it to differ from the fake's account.
+  const identities = new Map<string, { email: string; name: string }>();
+  const sent: { method: string; token: string }[] = [];
   const set: AccountSet = await createAccountSet({
     storage,
     openStore: (db) => openStore(`${prefix}-${db}`),
     connect(id) {
       const auth = auths.get(id) ?? fakeAuth();
       auths.set(id, auth);
-      const google = opts.googles[id] ?? opts.next;
-      if (!google) throw new Error(`No fake Google for ${id}`);
-      return { auth, google };
+      const fake = opts.googles[id] ?? opts.next;
+      if (!fake) throw new Error(`No fake Google for ${id}`);
+      return { auth, google: (getToken) => tokenGated(fake, getToken, identities, sent) };
     },
     clock: () => new Date('2026-11-19T10:00:00Z'),
   });
-  return { set, storage, auths, prefix };
+  return { set, storage, auths, prefix, identities, sent };
 }
 
 export async function syncAll(set: AccountSet): Promise<void> {
   for (const a of set.active()) await a.engine.syncNow();
+}
+
+// Like the HTTP client, asks for a token on every request and says who it is from that token.
+function tokenGated(
+  fake: FakeGoogle,
+  getToken: () => Promise<string>,
+  identities: Map<string, { email: string; name: string }>,
+  sent: { method: string; token: string }[],
+): GoogleApi {
+  return new Proxy(fake, {
+    get(target, prop, receiver) {
+      const member = Reflect.get(target, prop, receiver);
+      if (typeof member !== 'function') return member;
+      return async (...args: unknown[]) => {
+        const token = await getToken();
+        sent.push({ method: String(prop), token });
+        const who = prop === 'getAccount' ? identities.get(token) : undefined;
+        return who ? { ...who } : member.apply(target, args);
+      };
+    },
+  });
 }

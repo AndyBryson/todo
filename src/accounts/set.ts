@@ -19,10 +19,13 @@ export interface Account {
   engine: SyncEngine;
 }
 
+export type GoogleClient = (getToken: () => Promise<string>) => GoogleApi;
+
 export interface AccountDeps {
   storage: KeyValue;
   openStore(db: string): Promise<Store>;
-  connect(id: string, loginHint: () => string | null): { auth: Auth; google: GoogleApi };
+  // The client must take its token from getToken for every request it makes.
+  connect(id: string, loginHint: () => string | null): { auth: Auth; google: GoogleClient };
   clock?: () => Date;
 }
 
@@ -139,16 +142,23 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
     });
   }
 
-  // Every call to Google first checks who the current token belongs to, so one
-  // account's queue is never sent with another account's token.
-  function guard(account: Account, raw: GoogleApi): { google: GoogleApi; verify(): Promise<void> } {
+  // The client asks for a token on every request, and each token is checked against
+  // the account before it is handed out, so one account's queue is never sent with
+  // another account's token, even when a renewal lands in the middle of a call.
+  function guard(account: Account, makeGoogle: GoogleClient): () => Promise<string> {
     let verified: string | null = null;
     let checking: { token: string; done: Promise<void> } | null = null;
+
+    async function refuse(notice: string): Promise<never> {
+      account.auth.forget();
+      await account.store.commit({ notices: [notice] });
+      throw new AuthError(notice);
+    }
 
     async function check(token: string): Promise<void> {
       let who: { email: string; name: string };
       try {
-        who = await raw.getAccount();
+        who = await makeGoogle(async () => token).getAccount();
       } catch (error) {
         if (error instanceof AuthError || error instanceof OfflineError) throw error;
         // Unconfirmed is treated as possibly wrong: the check runs again next sync.
@@ -156,20 +166,20 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
       }
       const expected = account.record.email;
       if (expected === null) {
+        const taken = accounts.some(
+          (a) => a !== account && a.record.email !== null && sameEmail(a.record.email, who.email),
+        );
+        if (taken) await refuse('This Google account is already signed in.');
         update(account, { email: who.email, label: labelFor(who) });
       } else if (!sameEmail(expected, who.email)) {
-        account.auth.forget();
-        await account.store.commit({
-          notices: [`Signed in as ${who.email}, not ${expected}. Sign in again.`],
-        });
-        throw new AuthError('Signed in to another account');
+        await refuse(`Signed in as ${who.email}, not ${expected}. Sign in again.`);
       }
       verified = token;
     }
 
-    async function verify(): Promise<void> {
+    return async function checkedToken(): Promise<string> {
       const token = await account.auth.getToken();
-      if (token === verified) return;
+      if (token === verified) return token;
       if (checking?.token !== token) {
         const done = check(token).finally(() => {
           if (checking?.done === done) checking = null;
@@ -177,22 +187,12 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
         checking = { token, done };
       }
       await checking.done;
-    }
-
-    const google = new Proxy(raw, {
-      get(target, prop, receiver) {
-        const member = Reflect.get(target, prop, receiver);
-        if (typeof member !== 'function' || prop === 'getAccount') return member;
-        return async (...args: unknown[]) => {
-          await verify();
-          return member.apply(target, args);
-        };
-      },
-    });
-    return { google, verify };
+      return token;
+    };
   }
 
-  const verifiers = new WeakMap<Account, () => Promise<void>>();
+  const verifiers = new WeakMap<Account, () => Promise<unknown>>();
+  const unsubscribers = new WeakMap<Account, () => void>();
 
   async function verify(account: Account): Promise<void> {
     try {
@@ -205,17 +205,21 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
   function build(
     record: AccountRecord,
     store: Store,
-    conn: { auth: Auth; google: GoogleApi },
+    conn: { auth: Auth; google: GoogleClient },
   ): Account {
     const account = { record, store, auth: conn.auth } as Account;
-    const guarded = guard(account, conn.google);
-    account.google = guarded.google;
-    verifiers.set(account, guarded.verify);
+    const checkedToken = guard(account, conn.google);
+    account.google = conn.google(checkedToken);
+    verifiers.set(account, checkedToken);
     account.engine = createSyncEngine(account.google, store, deps.clock, hooks);
-    store.subscribe(notify);
-    account.engine.subscribe(() => {
+    const offStore = store.subscribe(notify);
+    const offEngine = account.engine.subscribe(() => {
       notify();
       if (account.engine.status().kind === 'synced') sweepSoon();
+    });
+    unsubscribers.set(account, () => {
+      offStore();
+      offEngine();
     });
     return account;
   }
@@ -250,7 +254,7 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
       let who: { email: string; name: string };
       try {
         await conn.auth.signIn({ chooseAccount: true });
-        who = await conn.google.getAccount();
+        who = await conn.google(() => conn.auth.getToken()).getAccount();
       } catch (error) {
         // No record is saved, so a token kept now would never be found again.
         conn.auth.forget();
@@ -294,6 +298,7 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
       const account = byId(id);
       if (!account) return;
       stopAndForget(account);
+      unsubscribers.get(account)?.();
       setAccounts(accounts.filter((a) => a !== account));
       await account.store.destroy();
       await sweepTransfers();
