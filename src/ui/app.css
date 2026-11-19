@@ -858,6 +858,12 @@ textarea:hover {
   cursor: pointer;
 }
 
+@media (hover: hover) {
+  .sidebar-lists .list-only:hover {
+    text-decoration: underline;
+  }
+}
+
 .sidebar-lists .list-only[aria-pressed="true"] {
   font-weight: 700;
 }
@@ -870,7 +876,8 @@ textarea:hover {
 }
 
 .sidebar-heading .show-all {
-  padding: 0.15rem 0.4rem;
+  min-height: 2rem;
+  padding: 0 0.5rem;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--accent);
