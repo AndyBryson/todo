@@ -1,8 +1,12 @@
+import { consentKey, tokenKey } from '../accounts/registry';
 import { AuthError, OfflineError } from './api';
 
 export interface Auth {
   getToken(): Promise<string>;
-  signIn(): Promise<void>;
+  signIn(opts?: { chooseAccount?: boolean }): Promise<void>;
+  // Drops this account's saved pass without telling Google, so other tabs and
+  // devices using the same grant are unaffected.
+  forget(): void;
   signedIn(): boolean;
   subscribe(fn: () => void): () => void;
 }
@@ -12,25 +16,23 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
 ].join(' ');
 const GIS_URL = 'https://accounts.google.com/gsi/client';
-const CONSENT_KEY = 'todo.consented';
 // Google gives a browser-only app an hour-long pass and no way to renew it quietly,
 // so keeping it across restarts saves the sign-in window flashing on every launch.
-const TOKEN_KEY = 'todo.token';
 const REFRESH_MARGIN_MS = 5 * 60_000;
 // A silent request that never answers would leave every sync waiting.
 const SILENT_TIMEOUT_MS = 15_000;
 
-const hasConsented = () => {
+const hasConsented = (id: string) => {
   try {
-    return localStorage.getItem(CONSENT_KEY) !== null;
+    return localStorage.getItem(consentKey(id)) !== null;
   } catch {
     return false;
   }
 };
 
-const rememberConsent = () => {
+const rememberConsent = (id: string) => {
   try {
-    localStorage.setItem(CONSENT_KEY, '1');
+    localStorage.setItem(consentKey(id), '1');
   } catch {
     // Without storage the user simply signs in again next visit.
   }
@@ -41,9 +43,9 @@ interface Saved {
   expiresAt: number;
 }
 
-function loadSaved(): Saved | null {
+function loadSaved(id: string): Saved | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(TOKEN_KEY) ?? 'null') as Partial<Saved> | null;
+    const saved = JSON.parse(localStorage.getItem(tokenKey(id)) ?? 'null') as Partial<Saved> | null;
     if (typeof saved?.token === 'string' && typeof saved.expiresAt === 'number') {
       return { token: saved.token, expiresAt: saved.expiresAt };
     }
@@ -53,9 +55,9 @@ function loadSaved(): Saved | null {
   return null;
 }
 
-function save(saved: Saved) {
+function save(id: string, saved: Saved) {
   try {
-    localStorage.setItem(TOKEN_KEY, JSON.stringify(saved));
+    localStorage.setItem(tokenKey(id), JSON.stringify(saved));
   } catch {
     // Without storage the pass lasts only as long as this window.
   }
@@ -84,8 +86,20 @@ interface Waiting {
   reject: (e: Error) => void;
 }
 
-export function createAuth(clientId: string): Auth {
-  const saved = loadSaved();
+function forgetSaved(id: string) {
+  try {
+    localStorage.removeItem(tokenKey(id));
+    localStorage.removeItem(consentKey(id));
+  } catch {
+    // Nothing readable was stored, so nothing is left to clear.
+  }
+}
+
+export function createAuth(
+  clientId: string,
+  { id, loginHint }: { id: string; loginHint: () => string | null },
+): Auth {
+  const saved = loadSaved(id);
   let token: string | null = saved?.token ?? null;
   let expiresAt = saved?.expiresAt ?? 0;
   let client: google.accounts.oauth2.TokenClient | undefined;
@@ -100,7 +114,7 @@ export function createAuth(clientId: string): Auth {
   };
   const fresh = (margin: number) => token !== null && expiresAt - Date.now() > margin;
 
-  async function request(timeoutMs?: number): Promise<void> {
+  async function request(timeoutMs?: number, chooseAccount = false): Promise<void> {
     await loadScript();
     client ??= google.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -114,8 +128,8 @@ export function createAuth(clientId: string): Auth {
         }
         token = res.access_token;
         expiresAt = Date.now() + Number(res.expires_in ?? 3600) * 1000;
-        save({ token, expiresAt });
-        rememberConsent();
+        save(id, { token, expiresAt });
+        rememberConsent(id);
         current?.resolve();
       },
       error_callback: (err) => {
@@ -140,7 +154,13 @@ export function createAuth(clientId: string): Auth {
         }
         // Google shows the consent screen by itself when access is not yet granted.
         // Forcing it with 'consent' lost the popup's reply, so sign-in never finished.
-        c.requestAccessToken({ prompt: '' });
+        // Pinning the email keeps a silent renewal on this account when the browser
+        // is signed in to several; the chooser is only for adding a new one.
+        const hint = loginHint();
+        c.requestAccessToken({
+          prompt: chooseAccount ? 'select_account' : '',
+          ...(hint === null ? {} : { login_hint: hint }),
+        });
       });
     } finally {
       clearTimeout(timer);
@@ -151,7 +171,7 @@ export function createAuth(clientId: string): Auth {
     async getToken() {
       if (fresh(REFRESH_MARGIN_MS) && token) return token;
       // Never prompt here: a popup outside a user gesture is blocked on iOS.
-      if (!hasConsented()) throw new AuthError('Sign in needed');
+      if (!hasConsented(id)) throw new AuthError('Sign in needed');
       silent ??= (async () => {
         try {
           await request(SILENT_TIMEOUT_MS);
@@ -170,8 +190,15 @@ export function createAuth(clientId: string): Auth {
       return silent;
     },
 
-    async signIn() {
-      await request();
+    async signIn(opts) {
+      await request(undefined, opts?.chooseAccount);
+      notify();
+    },
+
+    forget() {
+      token = null;
+      expiresAt = 0;
+      forgetSaved(id);
       notify();
     },
 

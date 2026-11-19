@@ -69,6 +69,7 @@ export function createFakeBackend(): { google: FakeGoogle; auth: Auth } {
   const auth: Auth = {
     getToken: async () => 'fake',
     signIn: async () => undefined,
+    forget: () => undefined,
     signedIn: () => true,
     subscribe: () => () => undefined,
   };

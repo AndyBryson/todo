@@ -1,4 +1,5 @@
 import { render } from 'preact';
+import { loadRegistry } from './accounts/registry';
 import { GOOGLE_CLIENT_ID } from './config';
 import { createAuth } from './google/auth';
 import { createHttpGoogle } from './google/http';
@@ -46,7 +47,10 @@ async function main() {
     auth = fake.auth;
     store = await openStore('todo-fake', closed);
   } else {
-    auth = createAuth(GOOGLE_CLIENT_ID);
+    auth = createAuth(GOOGLE_CLIENT_ID, {
+      id: loadRegistry(localStorage)[0]?.id ?? 'default',
+      loginHint: () => null,
+    });
     google = createHttpGoogle(() => auth.getToken());
     store = await openStore('todo', closed);
   }
