@@ -32,9 +32,13 @@ export function mergeViews(views: AccountView[]): Merged {
     queueLength: 0,
   };
 
-  const titleCount = new Map<string, number>();
+  const titleAccounts = new Map<string, Set<string>>();
   for (const v of views) {
-    for (const l of v.snapshot.lists) titleCount.set(l.title, (titleCount.get(l.title) ?? 0) + 1);
+    for (const l of v.snapshot.lists) {
+      const set = titleAccounts.get(l.title) ?? new Set<string>();
+      set.add(v.id);
+      titleAccounts.set(l.title, set);
+    }
   }
 
   for (const v of views) {
@@ -45,7 +49,7 @@ export function mergeViews(views: AccountView[]): Merged {
     for (const l of s.lists) {
       merged.lists.push(l);
       merged.listAccount[l.id] = v.id;
-      const clash = (titleCount.get(l.title) ?? 0) > 1;
+      const clash = (titleAccounts.get(l.title)?.size ?? 0) > 1;
       merged.listName[l.id] = clash ? `${l.title} · ${v.label}` : l.title;
     }
     for (const t of s.tasks) {

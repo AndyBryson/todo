@@ -85,6 +85,17 @@ describe('mergeViews', () => {
       LB1: 'My Tasks · Job',
     });
   });
+
+  it('two lists with one name in a single account stay plain', () => {
+    const a = view('a', 'Home', {
+      lists: [
+        { id: 'L1', title: 'Work' },
+        { id: 'L2', title: 'Work' },
+      ],
+    });
+    const b = view('b', 'Job', { lists: [{ id: 'LB', title: 'Other' }] });
+    expect(mergeViews([a, b]).listName).toEqual({ L1: 'Work', L2: 'Work', LB: 'Other' });
+  });
 });
 
 describe('combineStatus', () => {
