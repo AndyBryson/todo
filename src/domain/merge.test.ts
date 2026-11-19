@@ -16,6 +16,7 @@ function snap(overrides: Partial<Snapshot> = {}): Snapshot {
     defaultListId: null,
     renamed: {},
     hidden: {},
+    accountName: null,
     ...overrides,
   };
 }

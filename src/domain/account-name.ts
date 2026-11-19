@@ -1,0 +1,35 @@
+export interface AccountName {
+  // Empty means "use the Google name".
+  name: string;
+  updatedAt: string;
+}
+
+export const ACCOUNT_FILE = 'account.json';
+
+export function parseAccountFile(raw: string | null): AccountName | null {
+  if (raw === null) return null;
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
+    const o = v as Record<string, unknown>;
+    if (o.version !== 1 || typeof o.name !== 'string' || typeof o.updatedAt !== 'string') {
+      return null;
+    }
+    return { name: o.name, updatedAt: o.updatedAt };
+  } catch {
+    return null;
+  }
+}
+
+export function serialiseAccountFile(n: AccountName): string {
+  return JSON.stringify({ version: 1, name: n.name, updatedAt: n.updatedAt });
+}
+
+// A tie goes to the remote copy so two devices that stamped the same instant settle on one.
+export function newerName(
+  local: AccountName | null,
+  remote: AccountName | null,
+): AccountName | null {
+  if (!local || !remote) return local ?? remote;
+  return local.updatedAt > remote.updatedAt ? local : remote;
+}

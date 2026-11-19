@@ -616,3 +616,8 @@ export async function reorderSubtask(
     };
   });
 }
+
+// Whitespace only stores an empty name, which means "use the Google name" and still syncs.
+export async function renameAccount(store: Store, name: string, now: string): Promise<void> {
+  await store.commit({ meta: { accountName: { name: name.trim(), updatedAt: now } } });
+}

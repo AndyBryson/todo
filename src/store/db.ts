@@ -6,6 +6,7 @@ import {
   openDB,
   type StoreNames,
 } from 'idb';
+import type { AccountName } from '../domain/account-name';
 import type { BoardEntries, Task, TaskList } from '../domain/types';
 import type { NewTask, TaskPatch } from '../google/api';
 
@@ -67,6 +68,8 @@ export interface Snapshot {
   renamed: Record<string, string>;
   // Source task ID to target account ID, for originals whose move is still under way.
   hidden: Record<string, string>;
+  // The account's own display name, synced through account.json; null until one is set.
+  accountName: AccountName | null;
 }
 
 // One edit's worth of changes. Applied together or not at all.
@@ -163,7 +166,10 @@ interface Schema extends DBSchema {
 
 type Db = IDBPDatabase<Schema>;
 type Tx = IDBPTransaction<Schema, StoreNames<Schema>[], 'readwrite'>;
-export type Meta = Pick<Snapshot, 'lastSyncedAt' | 'lastListId' | 'defaultListId' | 'hidden'>;
+export type Meta = Pick<
+  Snapshot,
+  'lastSyncedAt' | 'lastListId' | 'defaultListId' | 'hidden' | 'accountName'
+>;
 
 function parseHidden(raw: string | null | undefined): Record<string, string> {
   try {
@@ -173,6 +179,19 @@ function parseHidden(raw: string | null | undefined): Record<string, string> {
       : {};
   } catch {
     return {};
+  }
+}
+
+function parseAccountName(raw: string | null | undefined): AccountName | null {
+  try {
+    const v: unknown = JSON.parse(raw ?? '');
+    if (v === null || typeof v !== 'object') return null;
+    const o = v as Record<string, unknown>;
+    return typeof o.name === 'string' && typeof o.updatedAt === 'string'
+      ? { name: o.name, updatedAt: o.updatedAt }
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -233,6 +252,7 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
       lastListId: (await db.get('meta', 'lastListId')) ?? null,
       defaultListId: (await db.get('meta', 'defaultListId')) ?? null,
       hidden: parseHidden(await db.get('meta', 'hidden')),
+      accountName: parseAccountName(await db.get('meta', 'accountName')),
     },
     renamed: {},
   };
@@ -395,7 +415,10 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
           ...Object.entries(change.meta ?? {}).map(([k, v]) =>
             tx
               .objectStore('meta')
-              .put(k === 'hidden' ? JSON.stringify(v) : (v as string | null), k),
+              .put(
+                k === 'hidden' || k === 'accountName' ? JSON.stringify(v) : (v as string | null),
+                k,
+              ),
           ),
         ],
       };

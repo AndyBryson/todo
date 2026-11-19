@@ -1,6 +1,7 @@
 import { SYNC_INTERVAL_MS } from '../config';
 import { AuthError, type GoogleApi, OfflineError } from '../google/api';
 import type { Store } from '../store/db';
+import { syncAccountName } from './account-name';
 import { pull } from './pull';
 import { type ReplayHooks, replay } from './push';
 
@@ -65,6 +66,7 @@ export function createSyncEngine(
         again = true;
         return;
       }
+      await syncAccountName(google, store);
       const at = now.toISOString();
       await store.setMeta({ lastSyncedAt: at });
       setStatus({ kind: 'synced', at });
