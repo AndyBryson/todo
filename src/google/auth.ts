@@ -107,6 +107,9 @@ export function createAuth(
   // own promise, so a late timeout can only ever affect itself.
   let waiting: Waiting | undefined;
   let silent: Promise<string> | undefined;
+  // A renewal can be pending when the account is forgotten; its late reply must not
+  // write the pass back.
+  let forgotten = false;
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -115,6 +118,7 @@ export function createAuth(
   const fresh = (margin: number) => token !== null && expiresAt - Date.now() > margin;
 
   async function request(timeoutMs?: number, chooseAccount = false): Promise<void> {
+    forgotten = false;
     await loadScript();
     client ??= google.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -122,6 +126,10 @@ export function createAuth(
       callback: (res) => {
         const current = waiting;
         waiting = undefined;
+        if (forgotten) {
+          current?.reject(new AuthError('Signed out'));
+          return;
+        }
         if (res.error || !res.access_token) {
           current?.reject(new AuthError(res.error ?? 'No token returned'));
           return;
@@ -196,6 +204,10 @@ export function createAuth(
     },
 
     forget() {
+      forgotten = true;
+      const current = waiting;
+      waiting = undefined;
+      current?.reject(new AuthError('Signed out'));
       token = null;
       expiresAt = 0;
       forgetSaved(id);

@@ -7,6 +7,8 @@ const opts = { id: 'a', loginHint: () => null };
 const HOUR = 3600_000;
 let requests = 0;
 let overrides: Record<string, string>[] = [];
+let hold = false;
+let held: (() => void) | undefined;
 
 beforeEach(() => {
   const store = new Map<string, string>();
@@ -22,6 +24,8 @@ beforeEach(() => {
   });
   requests = 0;
   overrides = [];
+  hold = false;
+  held = undefined;
   vi.stubGlobal('google', {
     accounts: {
       oauth2: {
@@ -31,7 +35,10 @@ beforeEach(() => {
           requestAccessToken: (o: Record<string, string>) => {
             requests += 1;
             overrides.push(o);
-            cfg.callback({ access_token: `token-${requests}`, expires_in: 3600 });
+            const reply = () =>
+              cfg.callback({ access_token: `token-${requests}`, expires_in: 3600 });
+            if (hold) held = reply;
+            else reply();
           },
         }),
       },
@@ -104,4 +111,22 @@ test('forget signs out and stops quiet renewal', async () => {
   const before = requests;
   await expect(auth.getToken()).rejects.toBeInstanceOf(AuthError);
   expect(requests).toBe(before);
+});
+
+test('a reply after forget no longer signs the account back in', async () => {
+  const auth = createAuth('client', opts);
+  localStorage.setItem('todo.consented.a', '1');
+  hold = true;
+  const pending = auth.getToken();
+  const outcome = pending.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  await vi.waitFor(() => expect(held).toBeDefined());
+  auth.forget();
+  held?.();
+  expect(await outcome).toBeInstanceOf(AuthError);
+  expect(localStorage.getItem('todo.token.a')).toBeNull();
+  expect(localStorage.getItem('todo.consented.a')).toBeNull();
+  expect(auth.signedIn()).toBe(false);
 });
