@@ -9,6 +9,8 @@ export interface SidebarAccount {
   id: string;
   label: string;
   email: string | null;
+  // Turned away as a second copy of an account already signed in.
+  refused: boolean;
   signedOut: boolean;
   needsSignIn: boolean;
   // Google's My Tasks, which can't be deleted.
@@ -222,7 +224,7 @@ export function Sidebar({
               </li>
             </ul>
           )}
-          {account.needsSignIn && account.email === null && (
+          {account.needsSignIn && account.refused && (
             <p class="account-hint">Sign in with a different Google account, or remove this one.</p>
           )}
           <div class="account-actions">

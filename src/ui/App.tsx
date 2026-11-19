@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { AccountSet } from '../accounts/set';
+import { type AccountSet, DUPLICATE_NOTICE } from '../accounts/set';
 import type { Workspace } from '../accounts/workspace';
 import { activeFilterCount, type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
@@ -281,6 +281,9 @@ export function App({ accounts, workspace }: Props) {
       id: a.record.id,
       label: accountLabel(a),
       email: a.record.email,
+      refused: merged.notices.some(
+        (n) => n.accountId === a.record.id && n.text === DUPLICATE_NOTICE,
+      ),
       signedOut: a.record.signedOut,
       needsSignIn: a.record.signedOut || a.engine.status().kind === 'signin',
       defaultListId: a.store.snapshot().defaultListId,
@@ -328,7 +331,7 @@ export function App({ accounts, workspace }: Props) {
     signInLabels.length > 0
       ? all
           .filter((a) => !a.record.signedOut && a.engine.status().kind === 'signin')
-          .map((a) => ({ id: a.record.id, label: accountLabel(a) }))
+          .map((a) => ({ id: a.record.id, label: a.record.label ?? a.record.email }))
       : [];
 
   const addTask = (input: { listId: string; title: string; pinned: boolean }) =>

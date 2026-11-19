@@ -43,6 +43,9 @@ export interface AccountSet {
 
 type Handoff = Extract<Op, { kind: 'handoff' }>;
 
+// The UI matches on this text to offer switching to another Google account.
+export const DUPLICATE_NOTICE = 'This Google account is already signed in.';
+
 const labelFor = (who: { email: string; name: string }) =>
   who.name || (who.email.split('@')[0] as string);
 const sameEmail = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -169,7 +172,7 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
         const taken = accounts.some(
           (a) => a !== account && a.record.email !== null && sameEmail(a.record.email, who.email),
         );
-        if (taken) await refuse('This Google account is already signed in.');
+        if (taken) await refuse(DUPLICATE_NOTICE);
         update(account, { email: who.email, label: labelFor(who) });
       } else if (!sameEmail(expected, who.email)) {
         await refuse(`Signed in as ${who.email}, not ${expected}. Sign in again.`);

@@ -5,7 +5,8 @@ interface Props {
   status: SyncStatus;
   // Accounts whose sign-in has lapsed. Each gets its own button, as iOS only lets
   // Google's window open from a tap.
-  signIn: { id: string; label: string }[];
+  // A label is null until the account's email is known.
+  signIn: { id: string; label: string | null }[];
   queueLength: number;
   notices: (Notice & { accountId: string })[];
   actionError: string | null;
@@ -90,7 +91,7 @@ export function Header({
           </div>
           {signIn.map((a) => (
             <button key={a.id} type="button" class="primary" onClick={() => onSignIn(a.id)}>
-              Sign in to {a.label}
+              {a.label === null ? 'Sign in' : `Sign in to ${a.label}`}
             </button>
           ))}
         </div>
