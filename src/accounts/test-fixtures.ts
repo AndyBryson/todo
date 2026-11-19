@@ -19,6 +19,7 @@ export function memoryStorage(
 
 export interface FakeAuth extends Auth {
   forgets: number;
+  signIns: ({ chooseAccount?: boolean } | undefined)[];
 }
 
 export function fakeAuth(): FakeAuth {
@@ -27,11 +28,13 @@ export function fakeAuth(): FakeAuth {
   const listeners = new Set<() => void>();
   const auth: FakeAuth = {
     forgets: 0,
+    signIns: [],
     async getToken() {
       if (token === null) throw new AuthError('Sign in needed');
       return token;
     },
-    async signIn() {
+    async signIn(opts) {
+      auth.signIns.push(opts);
       issued += 1;
       token = `token-${issued}`;
       for (const fn of listeners) fn();

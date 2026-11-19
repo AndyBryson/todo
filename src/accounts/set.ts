@@ -45,6 +45,8 @@ type Handoff = Extract<Op, { kind: 'handoff' }>;
 
 // The UI matches on this text to offer switching to another Google account.
 export const DUPLICATE_NOTICE = 'This Google account is already signed in.';
+const WRONG_OWNER_NOTICE =
+  "This device's saved tasks belong to a different Google account. Sign in with that one.";
 
 const labelFor = (who: { email: string; name: string }) =>
   who.name || (who.email.split('@')[0] as string);
@@ -159,20 +161,27 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
     }
 
     async function check(token: string): Promise<void> {
+      const expected = account.record.email;
+      // A device upgraded from one account has a mirror but no email for it, and only
+      // the mirror's default list can tell whose it is.
+      const owner = expected === null ? account.store.snapshot().defaultListId : null;
+      const google = makeGoogle(async () => token);
       let who: { email: string; name: string };
+      let defaultListId: string | null = null;
       try {
-        who = await makeGoogle(async () => token).getAccount();
+        who = await google.getAccount();
+        if (owner !== null) defaultListId = await google.getDefaultListId();
       } catch (error) {
         if (error instanceof AuthError || error instanceof OfflineError) throw error;
         // Unconfirmed is treated as possibly wrong: the check runs again next sync.
         throw new AccountUnconfirmedError("Couldn't confirm which Google account this is.");
       }
-      const expected = account.record.email;
       if (expected === null) {
         const taken = accounts.some(
           (a) => a !== account && a.record.email !== null && sameEmail(a.record.email, who.email),
         );
         if (taken) await refuse(DUPLICATE_NOTICE);
+        if (owner !== null && defaultListId !== owner) await refuse(WRONG_OWNER_NOTICE);
         update(account, { email: who.email, label: labelFor(who) });
       } else if (!sameEmail(expected, who.email)) {
         await refuse(`Signed in as ${who.email}, not ${expected}. Sign in again.`);
@@ -283,7 +292,9 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
     async signIn(id) {
       const account = byId(id);
       if (!account) return;
-      await account.auth.signIn();
+      // With no email there is no login hint, and Google would quietly pick whichever
+      // account the browser is on, which may not be the one this device's tasks belong to.
+      await account.auth.signIn({ chooseAccount: account.record.email === null });
       if (account.record.signedOut) update(account, { signedOut: false });
       await verify(account);
       account.engine.start();

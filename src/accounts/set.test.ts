@@ -16,9 +16,12 @@ afterEach(() => {
   running = undefined;
 });
 
-async function seedStore(name: string) {
+async function seedStore(name: string, defaultListId: string | null = null) {
   const store = await openStore(name);
-  await store.commit({ replaceRemote: { lists: LISTS, tasks: [task('x')] } });
+  await store.commit({
+    replaceRemote: { lists: LISTS, tasks: [task('x')] },
+    ...(defaultListId ? { meta: { defaultListId } } : {}),
+  });
   await editTask(store, 'x', { title: 'Renamed offline' });
   return store;
 }
@@ -203,4 +206,71 @@ test('a record still learning its email cannot become a second copy of an accoun
   expect(loadRegistry(storage)[0]?.email).toBeNull();
   expect(a?.engine.status()).toEqual({ kind: 'signin' });
   expect(a?.store.snapshot().lists).toEqual([]);
+});
+
+test("an upgraded device refuses a Google account that doesn't own its saved tasks", async () => {
+  const prefix = `test-${crypto.randomUUID()}`;
+  await seedStore(`${prefix}-todo`, 'me-default');
+  const household = createFakeGoogle({
+    lists: [{ id: 'house-default', title: 'My Tasks' }, ...LISTS],
+    tasks: [task('x')],
+    account: { email: 'house@example.com', name: 'House' },
+  });
+
+  const { set, auths, storage } = await harness({
+    records: [record('a', null, 'todo')],
+    prefix,
+    googles: { a: household },
+  });
+  running = set;
+  const a = set.get('a');
+  await a?.engine.syncNow();
+
+  expect(household.calls.map((c) => c.method)).toEqual(['getAccount', 'getDefaultListId']);
+  expect(household.tasks.get('x')?.title).toBe('x');
+  expect(a?.store.snapshot().queueLength).toBe(1);
+  expect(a?.record.email).toBeNull();
+  expect(loadRegistry(storage)[0]?.email).toBeNull();
+  expect(auths.get('a')?.forgets).toBe(1);
+  expect(a?.store.snapshot().notices.map((n) => n.text)).toEqual([
+    "This device's saved tasks belong to a different Google account. Sign in with that one.",
+  ]);
+  expect(a?.engine.status()).toEqual({ kind: 'signin' });
+});
+
+test('an upgraded device learns the email when the default lists match', async () => {
+  const prefix = `test-${crypto.randomUUID()}`;
+  await seedStore(`${prefix}-todo`, 'me-default');
+  const google = createFakeGoogle({
+    lists: [{ id: 'me-default', title: 'My Tasks' }, ...LISTS],
+    tasks: [task('x')],
+  });
+
+  const { set, storage } = await harness({
+    records: [record('a', null, 'todo')],
+    prefix,
+    googles: { a: google },
+  });
+  running = set;
+  const a = set.get('a');
+  await a?.engine.syncNow();
+
+  expect(loadRegistry(storage)[0]).toMatchObject({ email: 'me@example.com', label: 'Me' });
+  expect(google.tasks.get('x')?.title).toBe('Renamed offline');
+  expect(a?.store.snapshot().notices).toEqual([]);
+});
+
+test('signing in to an account with no email yet opens the account chooser', async () => {
+  const { set, auths } = await harness({
+    records: [record('a', null, 'todo'), record('b', 'shared@example.com')],
+    googles: {
+      a: createFakeGoogle({ lists: LISTS }),
+      b: createFakeGoogle({ account: { email: 'shared@example.com', name: 'Shared' } }),
+    },
+  });
+  running = set;
+  await set.signIn('a');
+  await set.signIn('b');
+  expect(auths.get('a')?.signIns).toEqual([{ chooseAccount: true }]);
+  expect(auths.get('b')?.signIns).toEqual([{ chooseAccount: false }]);
 });
