@@ -254,6 +254,20 @@ export async function moveCardToBottom(
   return foreign;
 }
 
+// The order the board shows: by rank in open columns, newest first in Done, where a
+// rank is only what the card had in the column it came from.
+export function boardOrder(
+  a: { entry: BoardEntry; task: Task },
+  b: { entry: BoardEntry; task: Task },
+): number {
+  return (
+    COLUMNS.indexOf(a.entry.column) - COLUMNS.indexOf(b.entry.column) ||
+    (a.entry.column === 'Done'
+      ? (b.task.completedAt ?? '').localeCompare(a.task.completedAt ?? '')
+      : a.entry.rank - b.entry.rank)
+  );
+}
+
 // One save for the whole selection: each card's change is built on the state the
 // previous card left, so ranks and Done rules match moving them one by one.
 export async function moveCardsToBottom(
@@ -273,15 +287,7 @@ export async function moveCardsToBottom(
         const task = s.tasks.find((t) => t.id === id);
         return entry && task && entry.column !== column ? [{ id, entry, task }] : [];
       })
-      // Keep the order the board shows: by rank in open columns, newest first in Done,
-      // where a rank is only what the card had in the column it came from.
-      .sort(
-        (a, b) =>
-          COLUMNS.indexOf(a.entry.column) - COLUMNS.indexOf(b.entry.column) ||
-          (a.entry.column === 'Done'
-            ? (b.task.completedAt ?? '').localeCompare(a.task.completedAt ?? '')
-            : a.entry.rank - b.entry.rank),
-      );
+      .sort(boardOrder);
 
     let working = s;
     const merged: Required<Pick<Change, 'putTasks' | 'entries' | 'enqueue'>> = {
@@ -320,9 +326,14 @@ function bottomOf(entries: BoardEntries, column: Column): string | undefined {
 }
 
 // For the rebalanced ranks a move hands back: each store takes only its own cards.
+// The entries were read before this commit, so only the rank is taken from them: a
+// priority, column or unknown field changed since must not be reverted.
 export async function putEntries(store: Store, entries: BoardEntries): Promise<void> {
   await store.commit((s) => {
-    const own = split(s, entries).own;
+    const own: BoardEntries = {};
+    for (const [id, e] of Object.entries(split(s, entries).own)) {
+      own[id] = { ...(s.entries[id] as BoardEntry), rank: e.rank, updatedAt: e.updatedAt };
+    }
     return Object.keys(own).length === 0 ? {} : { entries: own };
   });
 }

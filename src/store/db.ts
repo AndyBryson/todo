@@ -1,5 +1,6 @@
 import {
   type DBSchema,
+  deleteDB,
   type IDBPDatabase,
   type IDBPTransaction,
   openDB,
@@ -146,6 +147,9 @@ export interface Store {
   subscribe(fn: () => void): () => void;
   dismissNotice(id: string): Promise<void>;
   setMeta(meta: Partial<Meta>): Promise<void>;
+  // Deletes the database. Closing first keeps this window's own connection from
+  // blocking the delete and from reading as another window taking over.
+  destroy(): Promise<void>;
 }
 
 interface Schema extends DBSchema {
@@ -414,6 +418,12 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
 
     setMeta(patch) {
       return commit({ meta: patch });
+    },
+
+    async destroy() {
+      await chain;
+      db.close();
+      await deleteDB(name);
     },
   };
 }

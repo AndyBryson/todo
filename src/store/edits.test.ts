@@ -746,12 +746,22 @@ describe('across accounts', () => {
 
   test('putEntries writes only ids this store already has', async () => {
     await putEntries(store, {
-      a: entry({ column: 'Doing', openColumn: 'Doing', updatedAt: NOW }),
+      a: entry({ rank: 77, updatedAt: NOW }),
       x2: entry({ updatedAt: NOW }),
     });
     const { entries } = store.snapshot();
-    expect(entries.a).toMatchObject({ column: 'Doing', updatedAt: NOW });
+    expect(entries.a).toMatchObject({ rank: 77, updatedAt: NOW });
     expect(entries.x2).toBeUndefined();
+  });
+
+  test('a priority set after the foreign ranks were computed survives putEntries', async () => {
+    const foreign = { a: { ...entry({ rank: 77, updatedAt: NOW }), extra: { stale: true } } };
+    await setPriority(store, 'a', 'high', '2026-11-17T10:00:01Z');
+    await putEntries(store, foreign);
+    expect(store.snapshot().entries.a).toEqual({
+      ...entry({ rank: 77, updatedAt: NOW }),
+      priority: 'high',
+    });
   });
 });
 
