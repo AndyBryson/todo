@@ -5,6 +5,7 @@ import {
   cardVisible,
   DEFAULT_FILTERS,
   showNewAccounts,
+  showOnlyList,
   toggleListFilter,
 } from './filters';
 import { entry, task } from './test-fixtures';
@@ -93,6 +94,30 @@ describe('activeFilterCount', () => {
         priorities: new Set(['low', 'lowest']),
       }),
     ).toBe(2);
+  });
+});
+
+describe('showOnlyList', () => {
+  const all = ['a', 'b', 'c'];
+
+  test('from all lists, shows only the clicked one', () => {
+    expect(showOnlyList(null, 'b', all)).toEqual(new Set(['b']));
+  });
+
+  test('from a partial selection, shows only the clicked one', () => {
+    expect(showOnlyList(new Set(['a', 'c']), 'b', all)).toEqual(new Set(['b']));
+  });
+
+  test('clicking the list already shown alone returns to all', () => {
+    expect(showOnlyList(new Set(['b']), 'b', all)).toBeNull();
+  });
+
+  test('a stale ID in the filter does not stop the return to all', () => {
+    expect(showOnlyList(new Set(['b', 'gone']), 'b', all)).toBeNull();
+  });
+
+  test('with only one list there is nothing to narrow to', () => {
+    expect(showOnlyList(null, 'a', ['a'])).toBeNull();
   });
 });
 

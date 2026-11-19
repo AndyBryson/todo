@@ -55,6 +55,17 @@ export function toggleListFilter(
   return next.size === 0 || next.size === allIds.length ? null : next;
 }
 
+// Clicking the list that is already shown alone is the way back to every list.
+// Stale IDs from deleted lists are ignored, or they would block that way back.
+export function showOnlyList(
+  current: ReadonlySet<string> | null,
+  id: string,
+  allIds: readonly string[],
+): ReadonlySet<string> | null {
+  const alone = current !== null && allIds.every((other) => current.has(other) === (other === id));
+  return alone || allIds.length <= 1 ? null : new Set([id]);
+}
+
 // A newly added account's lists only arrive with its first pull, so an active list
 // filter waits for them; otherwise the account would look empty.
 export function showNewAccounts(
