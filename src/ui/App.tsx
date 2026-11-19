@@ -5,6 +5,7 @@ import {
   activeFilterCount,
   type BoardFilters,
   DEFAULT_FILTERS,
+  effectiveListFilter,
   showNewAccounts,
 } from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
@@ -170,13 +171,14 @@ export function App({ accounts, workspace }: Props) {
     [workspace, showError],
   );
 
-  // Lists can disappear after a sync or a sign-out; a stale selection must not hide every card.
-  const effectiveFilter = useMemo(() => {
-    if (!filter) return null;
-    const ids = new Set(merged.lists.map((l) => l.id));
-    const kept = new Set([...filter].filter((id) => ids.has(id)));
-    return kept.size > 0 ? kept : null;
-  }, [filter, merged.lists]);
+  const effectiveFilter = useMemo(
+    () =>
+      effectiveListFilter(
+        filter,
+        merged.lists.map((l) => l.id),
+      ),
+    [filter, merged.lists],
+  );
 
   useEffect(() => {
     const next = showNewAccounts(filter, newAccounts, merged.listAccount);

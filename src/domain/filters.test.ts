@@ -4,6 +4,7 @@ import {
   type BoardFilters,
   cardVisible,
   DEFAULT_FILTERS,
+  effectiveListFilter,
   showNewAccounts,
   showOnlyList,
   toggleListFilter,
@@ -94,6 +95,22 @@ describe('activeFilterCount', () => {
         priorities: new Set(['low', 'lowest']),
       }),
     ).toBe(2);
+  });
+});
+
+describe('effectiveListFilter', () => {
+  const all = ['a', 'b', 'c'];
+
+  test('drops IDs of lists that no longer exist', () => {
+    expect(effectiveListFilter(new Set(['a', 'gone']), all)).toEqual(new Set(['a']));
+  });
+
+  test('a filter left with no existing lists shows all', () => {
+    expect(effectiveListFilter(new Set(['gone']), all)).toBeNull();
+  });
+
+  test('a filter that covers every list reads as all', () => {
+    expect(effectiveListFilter(new Set(['a', 'b', 'c', 'gone']), all)).toBeNull();
   });
 });
 

@@ -55,6 +55,18 @@ export function toggleListFilter(
   return next.size === 0 || next.size === allIds.length ? null : next;
 }
 
+// Lists can disappear after a sync or a sign-out, and a stale selection must not
+// hide every card. A selection that covers every list is the same as no filter,
+// so it reads as null and Show all does not appear with every box ticked.
+export function effectiveListFilter(
+  filter: ReadonlySet<string> | null,
+  listIds: readonly string[],
+): ReadonlySet<string> | null {
+  if (!filter) return null;
+  const kept = new Set(listIds.filter((id) => filter.has(id)));
+  return kept.size === 0 || kept.size === listIds.length ? null : kept;
+}
+
 // Clicking the list that is already shown alone is the way back to every list.
 // Stale IDs from deleted lists are ignored, or they would block that way back.
 export function showOnlyList(
