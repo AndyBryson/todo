@@ -3,12 +3,15 @@ import type { SyncStatus } from '../sync/engine';
 
 interface Props {
   status: SyncStatus;
+  // Accounts whose sign-in has lapsed. Each gets its own button, as iOS only lets
+  // Google's window open from a tap.
+  signIn: { id: string; label: string }[];
   queueLength: number;
-  notices: Notice[];
+  notices: (Notice & { accountId: string })[];
   actionError: string | null;
   route: string;
-  onSignIn(): void;
-  onDismiss(id: string): void;
+  onSignIn(accountId: string): void;
+  onDismiss(accountId: string, id: string): void;
   // The board's lists-and-filters button; absent on Today.
   menu?: { filtersOn: number; expanded: boolean; onClick(): void };
 }
@@ -35,6 +38,7 @@ function statusText(status: SyncStatus): string {
 
 export function Header({
   status,
+  signIn,
   queueLength,
   notices,
   actionError,
@@ -73,18 +77,22 @@ export function Header({
         </nav>
         <div class="status">
           <div class="status-text" aria-live="polite">
-            <span class={status.kind === 'error' ? 'error' : undefined}>{statusText(status)}</span>
+            {signIn.length === 0 && (
+              <span class={status.kind === 'error' ? 'error' : undefined}>
+                {statusText(status)}
+              </span>
+            )}
             {queueLength > 0 && (
               <span class="queue">
                 {queueLength} {queueLength === 1 ? 'change' : 'changes'} waiting
               </span>
             )}
           </div>
-          {status.kind === 'signin' && (
-            <button type="button" class="primary" onClick={onSignIn}>
-              Sign in
+          {signIn.map((a) => (
+            <button key={a.id} type="button" class="primary" onClick={() => onSignIn(a.id)}>
+              Sign in to {a.label}
             </button>
-          )}
+          ))}
         </div>
       </div>
       {actionError && (
@@ -93,9 +101,9 @@ export function Header({
         </p>
       )}
       {notices.map((n) => (
-        <p class="line notice" key={n.id}>
+        <p class="line notice" key={`${n.accountId}/${n.id}`}>
           <span>{n.text}</span>
-          <button type="button" aria-label="Dismiss" onClick={() => onDismiss(n.id)}>
+          <button type="button" aria-label="Dismiss" onClick={() => onDismiss(n.accountId, n.id)}>
             ×
           </button>
         </p>

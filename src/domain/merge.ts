@@ -17,6 +17,8 @@ export interface Merged {
   listName: Record<string, string>;
   notices: (Notice & { accountId: string })[];
   queueLength: number;
+  // Temporary IDs are unique across accounts, so one map serves every open screen.
+  renamed: Record<string, string>;
 }
 
 // Google IDs are unique across accounts, so views concatenate without renaming.
@@ -30,6 +32,7 @@ export function mergeViews(views: AccountView[]): Merged {
     listName: {},
     notices: [],
     queueLength: 0,
+    renamed: {},
   };
 
   const titleAccounts = new Map<string, Set<string>>();
@@ -62,6 +65,7 @@ export function mergeViews(views: AccountView[]): Merged {
     }
     for (const n of s.notices) merged.notices.push({ ...n, accountId: v.id });
     merged.queueLength += s.queueLength;
+    Object.assign(merged.renamed, s.renamed);
   }
   return merged;
 }

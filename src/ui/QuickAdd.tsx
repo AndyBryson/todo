@@ -3,13 +3,15 @@ import type { TaskList } from '../domain/types';
 
 interface Props {
   lists: TaskList[];
+  // Carries the account label where two accounts have a list of the same name.
+  listName: Record<string, string>;
   defaultListId: string | null;
   pinned: boolean;
   // Resolves true when the task was added, so a failed add keeps the typed title.
   onAdd(input: { listId: string; title: string; pinned: boolean }): Promise<boolean>;
 }
 
-export function QuickAdd({ lists, defaultListId, pinned, onAdd }: Props) {
+export function QuickAdd({ lists, listName, defaultListId, pinned, onAdd }: Props) {
   const [chosen, setChosen] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -36,7 +38,7 @@ export function QuickAdd({ lists, defaultListId, pinned, onAdd }: Props) {
       >
         {lists.map((l) => (
           <option key={l.id} value={l.id}>
-            {l.title}
+            {listName[l.id] ?? l.title}
           </option>
         ))}
       </select>

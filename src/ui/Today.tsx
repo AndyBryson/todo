@@ -1,31 +1,26 @@
+import type { Workspace } from '../accounts/workspace';
 import { listColour } from '../domain/board';
 import { formatDue, localDate } from '../domain/dates';
 import type { BoardFilters } from '../domain/filters';
+import type { Merged } from '../domain/merge';
 import { todaySections } from '../domain/today';
 import type { Task } from '../domain/types';
-import type { Snapshot, Store } from '../store/db';
-import { addTask, setCompleted } from '../store/edits';
 import { openDetail } from './CardDetail';
 import { QuickAdd } from './QuickAdd';
 
 interface Props {
-  store: Store;
-  snapshot: Snapshot;
+  workspace: Workspace;
+  merged: Merged;
   filters: BoardFilters;
   phone: boolean;
-  act(fn: () => Promise<void>): Promise<boolean>;
+  act(fn: () => Promise<unknown>): Promise<boolean>;
+  onAdd(input: { listId: string; title: string; pinned: boolean }): Promise<boolean>;
 }
 
-export function Today({ store, snapshot, filters, phone, act }: Props) {
+export function Today({ workspace, merged, filters, phone, act, onAdd }: Props) {
   const now = new Date();
   const today = localDate(now);
-  const { overdue, dueToday, pinned } = todaySections(
-    snapshot.tasks,
-    snapshot.entries,
-    now,
-    filters,
-  );
-  const listTitle = new Map(snapshot.lists.map((l) => [l.id, l.title]));
+  const { overdue, dueToday, pinned } = todaySections(merged.tasks, merged.entries, now, filters);
 
   const sections = [
     { heading: 'Planned earlier', tasks: overdue },
@@ -41,16 +36,18 @@ export function Today({ store, snapshot, filters, phone, act }: Props) {
         checked={false}
         onChange={(e) => {
           const box = e.currentTarget;
-          void act(() => setCompleted(store, t.id, true, new Date().toISOString())).then((ok) => {
-            if (!ok) box.checked = false;
-          });
+          void act(() => workspace.setCompleted(t.id, true, new Date().toISOString())).then(
+            (ok) => {
+              if (!ok) box.checked = false;
+            },
+          );
         }}
       />
       <button type="button" class="today-title" onClick={() => openDetail('today', t.id)}>
         {t.title}
       </button>
       <span class="card-meta">
-        <span class="chip-static">{listTitle.get(t.listId) ?? ''}</span>
+        <span class="chip-static">{merged.listName[t.listId] ?? ''}</span>
         {t.due && (
           <time class={t.due < today ? 'due overdue' : 'due'} dateTime={t.due}>
             {formatDue(t.due)}
@@ -64,14 +61,11 @@ export function Today({ store, snapshot, filters, phone, act }: Props) {
     <div class="today">
       {!phone && (
         <QuickAdd
-          lists={snapshot.lists}
-          defaultListId={snapshot.lastListId}
+          lists={merged.lists}
+          listName={merged.listName}
+          defaultListId={workspace.lastListId()}
           pinned={true}
-          onAdd={(input) =>
-            act(async () => {
-              await addTask(store, input, new Date().toISOString());
-            })
-          }
+          onAdd={onAdd}
         />
       )}
       {filters.priorities.size === 0 ? (

@@ -1,19 +1,12 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import type { Workspace } from '../accounts/workspace';
+import type { Merged } from '../domain/merge';
 import { priorityOf } from '../domain/priority';
 import { COLUMNS, type Column, PRIORITIES, type Priority } from '../domain/types';
-import type { Snapshot, Store } from '../store/db';
-import {
-  deleteTask,
-  editTask,
-  moveCardToBottom,
-  moveToList,
-  setCompleted,
-  setPinned,
-  setPriority,
-} from '../store/edits';
+import { copyWarning, WAITING } from './CardMenu';
 import { Checklist } from './Checklist';
-import { useIsPhone } from './hooks';
+import { type AccountGroup, useIsPhone } from './hooks';
 
 export type DetailView = 'board' | 'today';
 
@@ -37,9 +30,10 @@ export function closeDetail(view: DetailView) {
 interface Props {
   taskId: string;
   view: DetailView;
-  store: Store;
+  workspace: Workspace;
   error: string | null;
-  snapshot: Snapshot;
+  merged: Merged;
+  groups: AccountGroup[];
   act(fn: () => Promise<unknown>): Promise<boolean>;
   onClose(): void;
 }
@@ -111,15 +105,24 @@ export function DraftField({
   );
 }
 
-export function CardDetail({ taskId, view, store, error, snapshot, act, onClose }: Props) {
+export function CardDetail({
+  taskId,
+  view,
+  workspace,
+  error,
+  merged,
+  groups,
+  act,
+  onClose,
+}: Props) {
   const phone = useIsPhone();
   const dialog = useRef<HTMLDialogElement>(null);
   const latestId = useRef(taskId);
   latestId.current = taskId;
   const [deleted, setDeleted] = useState(false);
 
-  const task = deleted ? undefined : snapshot.tasks.find((t) => t.id === taskId);
-  const renamedTo = Object.hasOwn(snapshot.renamed, taskId) ? snapshot.renamed[taskId] : undefined;
+  const task = deleted ? undefined : merged.tasks.find((t) => t.id === taskId);
+  const renamedTo = Object.hasOwn(merged.renamed, taskId) ? merged.renamed[taskId] : undefined;
 
   useEffect(() => {
     if (renamedTo && !task) {
@@ -193,14 +196,33 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
     );
   }
 
-  const entry = snapshot.entries[task.id];
+  const entry = merged.entries[task.id];
 
   const changeColumn = (column: Column) =>
-    void act(() => moveCardToBottom(store, task.id, column, new Date().toISOString()));
+    void act(() => workspace.moveCardToBottom(task.id, column, new Date().toISOString()));
+
+  const changeList = async (select: HTMLSelectElement) => {
+    const listId = select.value;
+    const account = merged.listAccount[listId];
+    const crossing = account !== merged.taskAccount[task.id];
+    const label = groups.find((g) => g.id === account)?.label ?? 'Account';
+    // Preact does not re-sync a controlled value whose prop is unchanged, so revert by hand.
+    if (crossing && !confirm(copyWarning(label))) {
+      select.value = task.listId;
+      return;
+    }
+    const moved = await act(() => workspace.moveToList(task.id, listId, new Date().toISOString()));
+    if (!moved) select.value = task.listId;
+    // The copy is a new task in the other account, so this panel has nothing left to show.
+    else if (crossing) {
+      setDeleted(true);
+      onClose();
+    }
+  };
 
   const remove = async () => {
     if (!confirm(`Delete “${task.title}” from Google Tasks?`)) return;
-    if (await act(() => deleteTask(store, task.id))) {
+    if (await act(() => workspace.deleteTask(task.id))) {
       setDeleted(true);
       onClose();
     }
@@ -214,14 +236,14 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
         saved={task.title}
         onSave={(title) => {
           // A blank title is rejected, so it reverts to the saved one.
-          if (title.trim()) void act(() => editTask(store, task.id, { title }));
+          if (title.trim()) void act(() => workspace.editTask(task.id, { title }));
         }}
       />
       <DraftField
         label="Notes"
         saved={task.notes}
         multiline
-        onSave={(notes) => void act(() => editTask(store, task.id, { notes }))}
+        onSave={(notes) => void act(() => workspace.editTask(task.id, { notes }))}
       />
 
       <div class="field">
@@ -233,13 +255,13 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
             value={task.due ?? ''}
             onChange={(e) => {
               const due = e.currentTarget.value || null;
-              void act(() => editTask(store, task.id, { due }));
+              void act(() => workspace.editTask(task.id, { due }));
             }}
           />
           <button
             type="button"
             disabled={task.due === null}
-            onClick={() => void act(() => editTask(store, task.id, { due: null }))}
+            onClick={() => void act(() => workspace.editTask(task.id, { due: null }))}
           >
             Clear
           </button>
@@ -249,17 +271,20 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
       {task.parent === null && (
         <label class="field">
           <span>List</span>
-          <select
-            value={task.listId}
-            onChange={(e) => {
-              const listId = e.currentTarget.value;
-              void act(() => moveToList(store, task.id, listId));
-            }}
-          >
-            {snapshot.lists.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.title}
-              </option>
+          <select value={task.listId} onChange={(e) => void changeList(e.currentTarget)}>
+            {groups.map((g) => (
+              <optgroup key={g.id} label={g.label}>
+                {g.lists.map((l) => {
+                  const waiting =
+                    l.id !== task.listId && workspace.canMoveTo(task.id, l.id) === 'unsent';
+                  const name = merged.listName[l.id] ?? l.title;
+                  return (
+                    <option key={l.id} value={l.id} disabled={waiting}>
+                      {waiting ? `${name}: ${WAITING}` : name}
+                    </option>
+                  );
+                })}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -288,7 +313,7 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
             value={priorityOf(entry)}
             onChange={(e) => {
               const priority = e.currentTarget.value as Priority;
-              void act(() => setPriority(store, task.id, priority, new Date().toISOString()));
+              void act(() => workspace.setPriority(task.id, priority, new Date().toISOString()));
             }}
           >
             {PRIORITIES.map((p) => (
@@ -307,7 +332,7 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
             checked={entry.pinned}
             onChange={(e) => {
               const pinned = e.currentTarget.checked;
-              void act(() => setPinned(store, task.id, pinned, new Date().toISOString()));
+              void act(() => workspace.setPinned(task.id, pinned, new Date().toISOString()));
             }}
           />
           Pinned to Today
@@ -320,14 +345,14 @@ export function CardDetail({ taskId, view, store, error, snapshot, act, onClose 
           checked={task.completed}
           onChange={(e) => {
             const completed = e.currentTarget.checked;
-            void act(() => setCompleted(store, task.id, completed, new Date().toISOString()));
+            void act(() => workspace.setCompleted(task.id, completed, new Date().toISOString()));
           }}
         />
         Completed
       </label>
 
       {task.parent === null && (
-        <Checklist parent={task} snapshot={snapshot} store={store} act={act} />
+        <Checklist parent={task} merged={merged} workspace={workspace} act={act} />
       )}
 
       <button type="button" class="danger" onClick={() => void remove()}>

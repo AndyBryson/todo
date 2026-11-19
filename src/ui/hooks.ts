@@ -1,13 +1,36 @@
-import { useEffect, useState, useSyncExternalStore } from 'preact/compat';
-import type { Snapshot, Store } from '../store/db';
-import type { SyncEngine, SyncStatus } from '../sync/engine';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'preact/compat';
+import type { Account, AccountSet } from '../accounts/set';
+import type { Workspace } from '../accounts/workspace';
+import { combineStatus, type Merged } from '../domain/merge';
+import type { TaskList } from '../domain/types';
+import type { SyncStatus } from '../sync/engine';
 
-export function useSnapshot(store: Store): Snapshot {
-  return useSyncExternalStore(store.subscribe, store.snapshot);
+export const accountLabel = (a: Account) => a.record.label ?? a.record.email ?? 'Account';
+
+export function useMerged(ws: Workspace): Merged {
+  return useSyncExternalStore(ws.subscribe, ws.merged);
 }
 
-export function useSyncStatus(engine: SyncEngine): SyncStatus {
-  return useSyncExternalStore(engine.subscribe, engine.status);
+export function useAccounts(set: AccountSet): Account[] {
+  return useSyncExternalStore(set.subscribe, set.all);
+}
+
+// useSyncExternalStore needs the same object back while nothing changed.
+export function useStatus(set: AccountSet): ReturnType<typeof combineStatus> {
+  const cache = useRef<{
+    views: { label: string; status: SyncStatus }[];
+    result: ReturnType<typeof combineStatus>;
+  } | null>(null);
+  const read = () => {
+    const views = set.active().map((a) => ({ label: accountLabel(a), status: a.engine.status() }));
+    const was = cache.current;
+    const same =
+      was?.views.length === views.length &&
+      views.every((v, i) => was.views[i]?.label === v.label && was.views[i]?.status === v.status);
+    if (!was || !same) cache.current = { views, result: combineStatus(views) };
+    return (cache.current as { result: ReturnType<typeof combineStatus> }).result;
+  };
+  return useSyncExternalStore(set.subscribe, read);
 }
 
 const PHONE_QUERY = '(max-width: 700px)';
@@ -22,4 +45,11 @@ export function useIsPhone(): boolean {
     return () => query.removeEventListener('change', onChange);
   }, []);
   return phone;
+}
+
+// One account's lists, for pickers that group lists under their account.
+export interface AccountGroup {
+  id: string;
+  label: string;
+  lists: TaskList[];
 }

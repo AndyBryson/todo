@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import Sortable from 'sortablejs';
+import type { Workspace } from '../accounts/workspace';
+import type { Merged } from '../domain/merge';
 import { subtasksOf } from '../domain/subtasks';
 import type { Task } from '../domain/types';
-import type { Snapshot, Store } from '../store/db';
-import { addSubtask, deleteTask, editTask, reorderSubtask, setCompleted } from '../store/edits';
 import { DraftField } from './CardDetail';
 
 interface Props {
   parent: Task;
-  snapshot: Snapshot;
-  store: Store;
+  merged: Merged;
+  workspace: Workspace;
   act(fn: () => Promise<unknown>): Promise<boolean>;
 }
 
-export function Checklist({ parent, snapshot, store, act }: Props) {
+export function Checklist({ parent, merged, workspace, act }: Props) {
   const list = useRef<HTMLUListElement>(null);
   const [draft, setDraft] = useState('');
   const draftRef = useRef('');
-  const steps = subtasksOf(snapshot.tasks, parent.id);
+  const steps = subtasksOf(merged.tasks, parent.id);
   const addInput = useRef<HTMLInputElement>(null);
 
   // Each new step pushes the add field down; keep it on screen while typing several.
@@ -28,7 +28,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
   // A step keeps its temporary ID as its key once Google names it, so the row is not
   // remounted mid-edit and focus stays put.
   const originalOf = new Map<string, string>();
-  for (const [from, to] of Object.entries(snapshot.renamed)) originalOf.set(to, from);
+  for (const [from, to] of Object.entries(merged.renamed)) originalOf.set(to, from);
   const keyOf = (id: string) => {
     let key = id;
     const seen = new Set<string>();
@@ -40,7 +40,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
   };
 
   const move = (taskId: string, previousId: string | null) =>
-    act(() => reorderSubtask(store, taskId, previousId, new Date().toISOString()));
+    act(() => workspace.reorderSubtask(taskId, previousId, new Date().toISOString()));
   // Sortable is created once, so its handler reads the latest move through this.
   const latest = useRef(move);
   latest.current = move;
@@ -99,7 +99,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
     // Clear at once so quick typing starts the next step; restore only if the add fails.
     draftRef.current = '';
     setDraft('');
-    if (!(await act(() => addSubtask(store, parent.id, title, new Date().toISOString())))) {
+    if (!(await act(() => workspace.addSubtask(parent.id, title, new Date().toISOString())))) {
       if (draftRef.current === '') {
         draftRef.current = title;
         setDraft(title);
@@ -134,7 +134,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
               checked={s.completed}
               onChange={(e) => {
                 const completed = e.currentTarget.checked;
-                void act(() => setCompleted(store, s.id, completed, new Date().toISOString()));
+                void act(() => workspace.setCompleted(s.id, completed, new Date().toISOString()));
               }}
             />
             <DraftField
@@ -144,7 +144,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
               saved={s.title}
               onSave={(title) => {
                 // A blank title is rejected, so it reverts to the saved one.
-                if (title.trim()) void act(() => editTask(store, s.id, { title }));
+                if (title.trim()) void act(() => workspace.editTask(s.id, { title }));
               }}
             />
             <button
@@ -152,7 +152,7 @@ export function Checklist({ parent, snapshot, store, act }: Props) {
               class="step-delete"
               data-part="delete"
               aria-label={`Delete step “${s.title}”`}
-              onClick={() => void act(() => deleteTask(store, s.id))}
+              onClick={() => void act(() => workspace.deleteTask(s.id))}
             >
               ×
             </button>

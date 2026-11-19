@@ -1,5 +1,5 @@
 import { type AccountView, type Merged, mergeViews } from '../domain/merge';
-import type { BoardEntries, Column, Priority } from '../domain/types';
+import type { BoardEntries, Column, Priority, TaskList } from '../domain/types';
 import type { TaskPatch } from '../google/api';
 import * as edits from '../store/edits';
 import * as lists from '../sync/lists';
@@ -23,7 +23,7 @@ export interface Workspace {
   reorderSubtask(id: string, previousId: string | null, now: string): Promise<void>;
   canMoveTo(id: string, toListId: string): 'yes' | 'unsent' | 'step';
   moveToList(id: string, toListId: string, now: string): Promise<void>;
-  createList(accountId: string, title: string): Promise<void>;
+  createList(accountId: string, title: string): Promise<TaskList>;
   renameList(listId: string, title: string): Promise<void>;
   deleteList(listId: string): Promise<void>;
   dismissNotice(accountId: string, id: string): Promise<void>;
@@ -229,7 +229,7 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
 
     async createList(accountId, title) {
       const a = account(accountId, `account ${accountId}`);
-      await lists.createList(a.google, a.store, title);
+      return lists.createList(a.google, a.store, title);
     },
     async renameList(listId, title) {
       const a = listOwner(listId);

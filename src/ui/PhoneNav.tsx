@@ -5,11 +5,12 @@ import { QuickAdd } from './QuickAdd';
 interface Props {
   route: 'board' | 'today';
   lists: TaskList[];
+  listName: Record<string, string>;
   defaultListId: string | null;
   onAdd(input: { listId: string; title: string; pinned: boolean }): Promise<boolean>;
 }
 
-export function PhoneNav({ route, lists, defaultListId, onAdd }: Props) {
+export function PhoneNav({ route, lists, listName, defaultListId, onAdd }: Props) {
   const [adding, setAdding] = useState(false);
 
   // Leaving a view closes the add sheet.
@@ -28,6 +29,7 @@ export function PhoneNav({ route, lists, defaultListId, onAdd }: Props) {
         <div class="sheet">
           <QuickAdd
             lists={lists}
+            listName={listName}
             defaultListId={defaultListId}
             pinned={route === 'today'}
             onAdd={async (input) => {

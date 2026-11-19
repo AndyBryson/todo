@@ -1,6 +1,6 @@
 # Todo PWA
 
-My own front end over Google Tasks, built because the Google Tasks UI is not good enough. Tasks stay in Google, so Google Home and other Google clients keep working. The app adds a merged kanban board across lists (Backlog, Next, Doing, Waiting, Done), priority by card order, and a Today view. Extra data (column, rank, pinned, priority) lives in the Drive `appDataFolder`. It is a Preact + TypeScript PWA that works offline and is hosted on GitHub Pages.
+My own front end over Google Tasks, built because the Google Tasks UI is not good enough. Tasks stay in Google, so Google Home and other Google clients keep working. The app adds a merged kanban board across lists (Backlog, Next, Doing, Done), priority by card order, and a Today view. Extra data (column, rank, pinned, priority) lives in the Drive `appDataFolder`. It is a Preact + TypeScript PWA that works offline and is hosted on GitHub Pages.
 
 Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation plan: `docs/superpowers/plans/`.
 
@@ -16,15 +16,20 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 
 ## Module boundaries
 
+- `src/accounts/`: the account registry, the set of signed-in accounts (one store, sign-in and engine each) and the workspace that merges them and routes each edit to the account that owns it.
 - `src/google/`: the only code that talks to Google (Tasks and Drive), behind a small interface so tests can use an in-memory fake.
 - `src/store/`: IndexedDB mirror and the pending-write queue.
 - `src/sync/`: pull, reconcile, push.
 - `src/domain/`: pure functions. Board construction, Today filter, ranking, dates.
 - `src/ui/`: components. No Google calls, and no logic worth testing.
-- `src/dev/`: dev-only helpers. `npm run dev` then `?fake` in the URL runs the app against an in-memory fake Google with seeded tasks and its own IndexedDB (`todo-fake`). It is imported only behind `import.meta.env.DEV`, so the production build leaves it out.
+- `src/dev/`: dev-only helpers. `npm run dev` then `?fake` in the URL runs the app against two in-memory fake Google accounts ("Me" and "Shared") with seeded tasks and their own IndexedDB databases (`todo-fake-me`, `todo-fake-shared`). It is imported only behind `import.meta.env.DEV`, so the production build leaves it out.
 
 ## Runtime rules
 
+- Each account has its own store, sign-in and engine. The board and Today merge them; one account's queue is never replayed against another.
+- A shared card's place (column, rank, priority, pin) lives in its own account's `board.json`, so everyone using that account sees the same place.
+- A move between accounts is a copy plus a checked delete: the original is deleted only once the copy exists in Google, and only if nobody edited it meanwhile.
+- Sign-out forgets the token on this device and never revokes Google's grant, because that would sign out other devices on a shared account.
 - One window at a time. Each window has its own copy of the queue and mirror, so a Web Lock keeps a second window out and it shows a message instead.
 - Tasks completed more than 7 days ago drop out of the pull, so their board entries go too. If one is reopened later, it lands at the bottom of Backlog, or of Next if it is in the default list (My Tasks).
 - Tasks first seen in My Tasks (Google's `@default` list, never matched by name) start in Next, so Google Home tasks are ready to act on. A first import, or a board that reads as empty, still puts everything in Backlog.

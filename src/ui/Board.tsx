@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
+import type { Workspace } from '../accounts/workspace';
 import { buildBoard } from '../domain/board';
 import type { BoardFilters } from '../domain/filters';
+import type { Merged } from '../domain/merge';
 import { COLUMNS, type Column as ColumnName } from '../domain/types';
-import type { Snapshot, Store } from '../store/db';
-import { addTask, moveCard, moveCardsToBottom } from '../store/edits';
 import { openDetail } from './CardDetail';
-import { CardMenu } from './CardMenu';
+import { CardMenu, copyWarning } from './CardMenu';
 import { Column, type Drop } from './Column';
+import type { AccountGroup } from './hooks';
 import { QuickAdd } from './QuickAdd';
 import { SelectionBar } from './SelectionBar';
 
 interface Props {
-  store: Store;
-  snapshot: Snapshot;
+  workspace: Workspace;
+  merged: Merged;
+  groups: AccountGroup[];
   filters: BoardFilters;
   phone: boolean;
   act(fn: () => Promise<unknown>): Promise<boolean>;
+  onAdd(input: { listId: string; title: string; pinned: boolean }): Promise<boolean>;
   selecting: boolean;
   onSelecting(on: boolean): void;
-  // Desktop only: the sidebar is permanent there, so this shows or hides it.
 }
 
 const COLUMN_KEY = 'todo.column';
@@ -40,7 +42,17 @@ function loadColumn(): PhoneView {
 
 const openTask = (id: string) => openDetail('board', id);
 
-export function Board({ store, snapshot, filters, phone, act, selecting, onSelecting }: Props) {
+export function Board({
+  workspace,
+  merged,
+  groups,
+  filters,
+  phone,
+  act,
+  onAdd,
+  selecting,
+  onSelecting,
+}: Props) {
   const [selected, setSelected] = useState(loadColumn);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -48,7 +60,7 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
     null,
   );
   const now = new Date();
-  const board = buildBoard(snapshot.tasks, snapshot.lists, snapshot.entries, filters, now);
+  const board = buildBoard(merged.tasks, merged.lists, merged.entries, filters, now);
 
   // Cards hidden by the filter or gone after a sync drop out, so the count is what moves.
   const visibleIds = new Set(COLUMNS.flatMap((c) => board[c].map((card) => card.task.id)));
@@ -115,14 +127,44 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
   async function moveChosen(column: ColumnName) {
     setBusy(true);
     const moved = await act(() =>
-      moveCardsToBottom(store, chosen, column, new Date().toISOString()),
+      workspace.moveCardsToBottom(chosen, column, new Date().toISOString()),
     );
     setBusy(false);
     if (moved) stopSelecting();
   }
 
+  const listOf = new Map(
+    COLUMNS.flatMap((c) => board[c].map((card) => [card.task.id, card.list.id])),
+  );
+
+  // A move into another account confirms once for the whole selection.
+  async function moveChosenToList(listId: string) {
+    const account = merged.listAccount[listId];
+    const crossing = chosen.some((id) => merged.taskAccount[id] !== account);
+    const label = groups.find((g) => g.id === account)?.label ?? 'Account';
+    if (crossing && !confirm(copyWarning(label))) return;
+    setBusy(true);
+    const now = new Date().toISOString();
+    const moved = await act(async () => {
+      for (const id of chosen) {
+        if (listOf.get(id) !== listId) await workspace.moveToList(id, listId, now);
+      }
+    });
+    setBusy(false);
+    if (moved) stopSelecting();
+  }
+
+  const targets = groups.map((g) => ({
+    ...g,
+    lists: g.lists.map((l) => ({
+      id: l.id,
+      name: merged.listName[l.id] ?? l.title,
+      waiting: chosen.some((id) => workspace.canMoveTo(id, l.id) === 'unsent'),
+    })),
+  }));
+
   const onDrop = (d: Drop) =>
-    void act(() => moveCard(store, d.taskId, d.column, d.insertAfter, new Date().toISOString()));
+    void act(() => workspace.moveCard(d.taskId, d.column, d.insertAfter, new Date().toISOString()));
 
   function select(name: PhoneView) {
     setSelected(name);
@@ -174,6 +216,7 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
               key={name}
               name={name}
               cards={board[name]}
+              listName={merged.listName}
               now={now}
               onOpen={openTask}
               onDrop={onDrop}
@@ -185,14 +228,11 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
             >
               {!phone && name === 'Backlog' && (
                 <QuickAdd
-                  lists={snapshot.lists}
-                  defaultListId={snapshot.lastListId}
+                  lists={merged.lists}
+                  listName={merged.listName}
+                  defaultListId={workspace.lastListId()}
                   pinned={false}
-                  onAdd={(input) =>
-                    act(async () => {
-                      await addTask(store, input, new Date().toISOString());
-                    })
-                  }
+                  onAdd={onAdd}
                 />
               )}
             </Column>
@@ -207,14 +247,18 @@ export function Board({ store, snapshot, filters, phone, act, selecting, onSelec
           y={menu.y}
           onClose={closeMenu}
           act={act}
-          store={store}
+          workspace={workspace}
+          merged={merged}
+          groups={groups}
         />
       )}
       {selecting && (
         <SelectionBar
           count={chosen.length}
           busy={busy}
+          targets={targets}
           onMove={(column) => void moveChosen(column)}
+          onMoveToList={(listId) => void moveChosenToList(listId)}
           onCancel={stopSelecting}
         />
       )}

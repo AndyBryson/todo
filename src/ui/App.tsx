@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import type { AccountSet } from '../accounts/set';
+import type { Workspace } from '../accounts/workspace';
 import { activeFilterCount, type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
-import { type GoogleApi, OfflineError } from '../google/api';
-import type { Auth } from '../google/auth';
-import type { Store } from '../store/db';
-import { addTask } from '../store/edits';
-import type { SyncEngine } from '../sync/engine';
-import { createList, deleteList, PendingMoveError, renameList } from '../sync/lists';
+import { OfflineError } from '../google/api';
+import { PendingMoveError } from '../sync/lists';
 import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
-import { useIsPhone, useSnapshot, useSyncStatus } from './hooks';
+import {
+  type AccountGroup,
+  accountLabel,
+  useAccounts,
+  useIsPhone,
+  useMerged,
+  useStatus,
+} from './hooks';
 import { PhoneNav } from './PhoneNav';
 import { Sidebar, SidebarDrawer } from './Sidebar';
 import { Today } from './Today';
@@ -97,16 +102,14 @@ function readRoute(): { view: DetailView; taskId: string | null } {
 }
 
 interface Props {
-  store: Store;
-  engine: SyncEngine;
-  auth: Auth;
-  // Only for list changes, which go straight to Google rather than through the queue.
-  google: GoogleApi;
+  accounts: AccountSet;
+  workspace: Workspace;
 }
 
-export function App({ store, engine, auth, google }: Props) {
-  const snapshot = useSnapshot(store);
-  const status = useSyncStatus(engine);
+export function App({ accounts, workspace }: Props) {
+  const merged = useMerged(workspace);
+  const all = useAccounts(accounts);
+  const { status, signIn: signInLabels } = useStatus(accounts);
   const phone = useIsPhone();
   const [{ view, taskId }, setRoute] = useState(readRoute);
   const [filter, setFilter] = useState(loadFilter);
@@ -155,26 +158,38 @@ export function App({ store, engine, auth, google }: Props) {
       }
       // Apart from the edit, so a failing sync request cannot make a saved edit look failed.
       try {
-        engine.requestSync();
+        workspace.requestSync();
       } catch (e) {
         showError(e);
       }
       return true;
     },
-    [engine, showError],
+    [workspace, showError],
   );
 
-  // Lists can disappear after a sync; a stale selection must not hide every card.
+  // Lists can disappear after a sync or a sign-out; a stale selection must not hide every card.
   const effectiveFilter = useMemo(() => {
     if (!filter) return null;
-    const ids = new Set(snapshot.lists.map((l) => l.id));
+    const ids = new Set(merged.lists.map((l) => l.id));
     const kept = new Set([...filter].filter((id) => ids.has(id)));
     return kept.size > 0 ? kept : null;
-  }, [filter, snapshot.lists]);
+  }, [filter, merged.lists]);
 
   const filters = useMemo<BoardFilters>(
     () => ({ lists: effectiveFilter, priorities, planned }),
     [effectiveFilter, priorities, planned],
+  );
+
+  const groups = useMemo<AccountGroup[]>(
+    () =>
+      all
+        .filter((a) => !a.record.signedOut)
+        .map((a) => ({
+          id: a.record.id,
+          label: accountLabel(a),
+          lists: merged.lists.filter((l) => merged.listAccount[l.id] === a.record.id),
+        })),
+    [all, merged],
   );
 
   function changeFilters(next: BoardFilters) {
@@ -225,13 +240,58 @@ export function App({ store, engine, auth, google }: Props) {
       }
     });
 
+  // Sign-in has to start from a tap, as iOS only allows Google's window then.
+  async function signIn(id: string) {
+    try {
+      await accounts.signIn(id);
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  async function addAccount() {
+    try {
+      if ((await accounts.add()) === 'duplicate') showError('That account is already signed in.');
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  async function removeAccount(id: string) {
+    const account = accounts.get(id);
+    if (!account) return;
+    const n = account.store.snapshot().queueLength;
+    if (
+      n > 0 &&
+      !confirm(
+        `This account has ${n} ${n === 1 ? 'change' : 'changes'} not yet sent to Google. Remove it anyway?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await accounts.remove(id);
+    } catch (e) {
+      showError(e);
+    }
+  }
+
   const sidebarProps = {
-    lists: snapshot.lists,
-    tasks: snapshot.tasks,
-    defaultListId: snapshot.defaultListId,
-    onCreateList: (title: string) =>
+    accounts: all.map((a) => ({
+      id: a.record.id,
+      label: accountLabel(a),
+      email: a.record.email,
+      signedOut: a.record.signedOut,
+      needsSignIn: a.record.signedOut || a.engine.status().kind === 'signin',
+      defaultListId: a.store.snapshot().defaultListId,
+      lists: groups.find((g) => g.id === a.record.id)?.lists ?? [],
+    })),
+    tasks: merged.tasks,
+    listName: merged.listName,
+    allListIds: merged.lists.map((l) => l.id),
+    onCreateList: (accountId: string, title: string) =>
       listChange('create the list', async () => {
-        const list = await createList(google, store, title);
+        const list = await workspace.createList(accountId, title);
         // A list someone has just made should show, even with others unticked.
         if (filter) {
           const next = new Set(filter).add(list.id);
@@ -240,10 +300,10 @@ export function App({ store, engine, auth, google }: Props) {
         }
       }),
     onRenameList: (id: string, title: string) =>
-      listChange('rename the list', () => renameList(google, store, id, title)),
+      listChange('rename the list', () => workspace.renameList(id, title)),
     onDeleteList: (id: string) =>
       listChange('delete the list', async () => {
-        await deleteList(google, store, id);
+        await workspace.deleteList(id);
         if (filter?.has(id)) {
           const next = new Set(filter);
           next.delete(id);
@@ -252,6 +312,10 @@ export function App({ store, engine, auth, google }: Props) {
           saveFilter(kept);
         }
       }),
+    onSignIn: (id: string) => void signIn(id),
+    onSignOut: (id: string) => void accounts.signOut(id).catch(showError),
+    onRemove: (id: string) => void removeAccount(id),
+    onAddAccount: () => void addAccount(),
     filters,
     onFilters: changeFilters,
     selecting,
@@ -259,25 +323,28 @@ export function App({ store, engine, auth, google }: Props) {
     showSelect: view === 'board',
   };
 
-  async function signIn() {
-    try {
-      await auth.signIn();
-      await engine.syncNow();
-    } catch (e) {
-      showError(e);
-    }
-  }
+  // Labels can repeat, so the buttons come from the accounts themselves, in the same order.
+  const needSignIn =
+    signInLabels.length > 0
+      ? all
+          .filter((a) => !a.record.signedOut && a.engine.status().kind === 'signin')
+          .map((a) => ({ id: a.record.id, label: accountLabel(a) }))
+      : [];
+
+  const addTask = (input: { listId: string; title: string; pinned: boolean }) =>
+    act(() => workspace.addTask(input, new Date().toISOString()));
 
   return (
     <>
       <Header
         status={status}
-        queueLength={snapshot.queueLength}
-        notices={snapshot.notices}
+        signIn={needSignIn}
+        queueLength={merged.queueLength}
+        notices={merged.notices}
         actionError={actionError}
         route={view}
-        onSignIn={() => void signIn()}
-        onDismiss={(id) => void store.dismissNotice(id)}
+        onSignIn={(id) => void signIn(id)}
+        onDismiss={(accountId, id) => void workspace.dismissNotice(accountId, id)}
         menu={{
           filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
           expanded: phone ? drawerOpen : sidebarOpen,
@@ -288,14 +355,23 @@ export function App({ store, engine, auth, google }: Props) {
         {!phone && sidebarOpen && <Sidebar {...sidebarProps} />}
         <main class="main">
           {view === 'today' ? (
-            <Today store={store} snapshot={snapshot} filters={filters} phone={phone} act={act} />
-          ) : (
-            <Board
-              store={store}
-              snapshot={snapshot}
+            <Today
+              workspace={workspace}
+              merged={merged}
               filters={filters}
               phone={phone}
               act={act}
+              onAdd={addTask}
+            />
+          ) : (
+            <Board
+              workspace={workspace}
+              merged={merged}
+              groups={groups}
+              filters={filters}
+              phone={phone}
+              act={act}
+              onAdd={addTask}
               selecting={selecting}
               onSelecting={setSelecting}
             />
@@ -308,13 +384,10 @@ export function App({ store, engine, auth, google }: Props) {
       {phone && (
         <PhoneNav
           route={view}
-          lists={snapshot.lists}
-          defaultListId={snapshot.lastListId}
-          onAdd={(input) =>
-            act(async () => {
-              await addTask(store, input, new Date().toISOString());
-            })
-          }
+          lists={merged.lists}
+          listName={merged.listName}
+          defaultListId={workspace.lastListId()}
+          onAdd={addTask}
         />
       )}
       {taskId && (
@@ -323,8 +396,9 @@ export function App({ store, engine, auth, google }: Props) {
           error={actionError}
           taskId={taskId}
           view={view}
-          store={store}
-          snapshot={snapshot}
+          workspace={workspace}
+          merged={merged}
+          groups={groups}
           act={act}
           onClose={() => closeDetail(view)}
         />

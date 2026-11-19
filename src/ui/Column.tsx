@@ -14,6 +14,7 @@ export interface Drop {
 interface Props {
   name: ColumnName;
   cards: CardData[];
+  listName: Record<string, string>;
   now: Date;
   onOpen(id: string): void;
   onDrop(drop: Drop): void;
@@ -39,6 +40,7 @@ function touchPoint(e: Event | undefined): { x: number; y: number } | null {
 export function Column({
   name,
   cards,
+  listName,
   now,
   onOpen,
   onDrop,
@@ -153,6 +155,7 @@ export function Column({
           <Card
             key={c.task.id}
             card={c}
+            listName={listName[c.list.id] ?? c.list.title}
             now={now}
             onOpen={onOpen}
             selecting={selecting}

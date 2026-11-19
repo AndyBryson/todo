@@ -1,10 +1,12 @@
+import { Fragment } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import type { Workspace } from '../accounts/workspace';
 import type { Card } from '../domain/board';
+import type { Merged } from '../domain/merge';
 import { priorityOf } from '../domain/priority';
 import { COLUMNS, type Column, PRIORITIES, type Priority } from '../domain/types';
-import type { Store } from '../store/db';
-import { deleteTask, moveCardToBottom, setPinned, setPriority } from '../store/edits';
 import { openDetail } from './CardDetail';
+import type { AccountGroup } from './hooks';
 
 interface Props {
   card: Card;
@@ -12,7 +14,9 @@ interface Props {
   y: number;
   onClose(): void;
   act(fn: () => Promise<unknown>): Promise<boolean>;
-  store: Store;
+  workspace: Workspace;
+  merged: Merged;
+  groups: AccountGroup[];
   // Opened by a held finger: the release can still produce a click, which must not hit an item.
   touch?: boolean;
 }
@@ -25,7 +29,23 @@ const GHOST_CLICK_MS = 500;
 const TOUCH_OFFSET = 28;
 const label = (p: Priority) => p.charAt(0).toUpperCase() + p.slice(1);
 
-export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Props) {
+export const WAITING = 'Waiting for changes to send';
+
+// Google can't move a task between accounts, so the app copies it and deletes the original.
+export const copyWarning = (account: string) =>
+  `This makes a copy in ${account} and deletes the original. Links Google keeps for the original, such as a Google Home reminder, won't carry over.`;
+
+export function CardMenu({
+  card,
+  x,
+  y,
+  onClose,
+  act,
+  workspace,
+  merged,
+  groups,
+  touch = false,
+}: Props) {
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Group | null>(null);
   // Set when a key opens a group, so focus lands on its first item once it has rendered.
@@ -144,7 +164,14 @@ export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Pro
 
   async function remove() {
     if (!confirm(`Delete “${task.title}” from Google Tasks?`)) return;
-    run(() => deleteTask(store, task.id));
+    run(() => workspace.deleteTask(task.id));
+  }
+
+  function moveToList(listId: string, account: string) {
+    const crossing = merged.listAccount[listId] !== merged.taskAccount[task.id];
+    if (crossing && !confirm(copyWarning(account))) return;
+    // A copy in another account is a new card, so there is nothing to hand focus back to.
+    run(() => workspace.moveToList(task.id, listId, now()), !crossing);
   }
 
   const toggle = (group: Group) => setOpen(open === group ? null : group);
@@ -194,7 +221,7 @@ export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Pro
               type="button"
               role="menuitemradio"
               aria-checked={p === current}
-              onClick={() => run(() => setPriority(store, task.id, p, now()), true)}
+              onClick={() => run(() => workspace.setPriority(task.id, p, now()), true)}
             >
               <span class="mark" aria-hidden="true">
                 {p === current ? '✓' : ''}
@@ -217,6 +244,7 @@ export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Pro
       </button>
       {open === 'move' && (
         <fieldset class="submenu" data-group="move" aria-label="Move to">
+          <p class="submenu-heading">Column</p>
           {COLUMNS.map((c: Column) => (
             <button
               key={c}
@@ -224,13 +252,40 @@ export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Pro
               role="menuitemradio"
               aria-checked={c === entry.column}
               disabled={c === entry.column}
-              onClick={() => run(() => moveCardToBottom(store, task.id, c, now()))}
+              onClick={() => run(() => workspace.moveCardToBottom(task.id, c, now()))}
             >
               <span class="mark" aria-hidden="true">
                 {c === entry.column ? '✓' : ''}
               </span>
               {c}
             </button>
+          ))}
+          {groups.map((g) => (
+            <Fragment key={g.id}>
+              <p class="submenu-heading">{g.label}</p>
+              {g.lists.map((l) => {
+                const here = l.id === task.listId;
+                const waiting = !here && workspace.canMoveTo(task.id, l.id) === 'unsent';
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={here}
+                    disabled={here || waiting}
+                    onClick={() => moveToList(l.id, g.label)}
+                  >
+                    <span class="mark" aria-hidden="true">
+                      {here ? '✓' : ''}
+                    </span>
+                    <span>
+                      {merged.listName[l.id] ?? l.title}
+                      {waiting && <span class="submenu-note">{WAITING}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </Fragment>
           ))}
         </fieldset>
       )}
@@ -239,7 +294,7 @@ export function CardMenu({ card, x, y, onClose, act, store, touch = false }: Pro
         <button
           type="button"
           role="menuitem"
-          onClick={() => run(() => setPinned(store, task.id, !entry.pinned, now()), true)}
+          onClick={() => run(() => workspace.setPinned(task.id, !entry.pinned, now()), true)}
         >
           {entry.pinned ? 'Unpin' : 'Pin to Today'}
         </button>

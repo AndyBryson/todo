@@ -1061,3 +1061,66 @@ textarea:hover {
   min-width: 0;
   padding: 0.3rem 0.5rem;
 }
+
+.sidebar-account {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-self: stretch;
+}
+
+.sidebar-account h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.sidebar-account .account-actions button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.sidebar-account .account-actions .primary {
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sidebar-account .account-actions .danger {
+  color: var(--error);
+}
+
+.account-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.card-menu .submenu-heading {
+  margin: 0.4rem 0 0.1rem;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.card-menu .submenu-note {
+  display: block;
+  font-size: 0.75rem;
+}
+
+.selection-move select {
+  max-width: 40vw;
+}

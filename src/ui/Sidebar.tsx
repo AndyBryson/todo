@@ -5,19 +5,35 @@ import type { Task, TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
 import { ListMenu } from './ListMenu';
 
-interface Props {
-  lists: TaskList[];
-  tasks: Task[];
+export interface SidebarAccount {
+  id: string;
+  label: string;
+  email: string | null;
+  signedOut: boolean;
+  needsSignIn: boolean;
+  // Google's My Tasks, which can't be deleted.
   defaultListId: string | null;
+  lists: TaskList[];
+}
+
+interface Props {
+  accounts: SidebarAccount[];
+  tasks: Task[];
+  listName: Record<string, string>;
+  allListIds: string[];
   filters: BoardFilters;
   onFilters(next: BoardFilters): void;
   selecting: boolean;
   onToggleSelect(): void;
   // Multi-select is board-only.
   showSelect: boolean;
-  onCreateList(title: string): Promise<boolean>;
+  onCreateList(accountId: string, title: string): Promise<boolean>;
   onRenameList(id: string, title: string): Promise<boolean>;
   onDeleteList(id: string): Promise<boolean>;
+  onSignIn(accountId: string): void;
+  onSignOut(accountId: string): void;
+  onRemove(accountId: string): void;
+  onAddAccount(): void;
 }
 
 function useOnline(): boolean {
@@ -85,9 +101,10 @@ function NameInput({
 const tasksPhrase = (n: number) => (n === 1 ? '1 task' : `${n} tasks`);
 
 export function Sidebar({
-  lists,
+  accounts,
   tasks,
-  defaultListId,
+  listName,
+  allListIds,
   filters,
   onFilters,
   selecting,
@@ -96,11 +113,16 @@ export function Sidebar({
   onCreateList,
   onRenameList,
   onDeleteList,
+  onSignIn,
+  onSignOut,
+  onRemove,
+  onAddAccount,
 }: Props) {
   const online = useOnline();
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  // The account a new list is being named for.
+  const [adding, setAdding] = useState<string | null>(null);
   const offline = online ? undefined : "You're offline";
 
   function openMenu(id: string, x: number, y: number) {
@@ -115,88 +137,120 @@ export function Sidebar({
 
   function remove(list: TaskList) {
     const n = openTaskCount(tasks, list.id);
-    if (!confirm(`Delete “${list.title}” and its ${tasksPhrase(n)}? This can't be undone.`)) return;
+    const name = listName[list.id] ?? list.title;
+    if (!confirm(`Delete “${name}” and its ${tasksPhrase(n)}? This can't be undone.`)) return;
     void onDeleteList(list.id);
   }
 
-  function create(value: string | null) {
-    setAdding(false);
+  function create(accountId: string, value: string | null) {
+    setAdding(null);
     const name = value?.trim();
-    if (name) void onCreateList(name);
+    if (name) void onCreateList(accountId, name);
   }
 
   function toggleList(id: string) {
-    onFilters({
-      ...filters,
-      lists: toggleListFilter(
-        filters.lists,
-        id,
-        lists.map((l) => l.id),
-      ),
-    });
+    onFilters({ ...filters, lists: toggleListFilter(filters.lists, id, allListIds) });
   }
 
   return (
     <aside class="sidebar">
       <h2>Lists</h2>
-      <ul class="sidebar-lists">
-        {lists.map((list) => (
-          <li
-            key={list.id}
-            style={{ '--chip': listColour(list.id) }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              // The context-menu key reports no pointer position; open under the row instead.
-              const r = e.currentTarget.getBoundingClientRect();
-              const byKey = e.clientX === 0 && e.clientY === 0;
-              openMenu(list.id, byKey ? r.left : e.clientX, byKey ? r.bottom + 4 : e.clientY);
-            }}
-          >
-            {renaming === list.id ? (
-              <NameInput
-                initial={list.title}
-                label={`New name for ${list.title}`}
-                onDone={(value) => rename(list, value)}
-              />
-            ) : (
-              <label class="check">
-                <input
-                  type="checkbox"
-                  checked={filters.lists?.has(list.id) ?? true}
-                  onChange={() => toggleList(list.id)}
-                />
-                <span class="dot" />
-                {list.title}
-              </label>
-            )}
-            {menu?.id === list.id && (
-              <ListMenu
-                x={menu.x}
-                y={menu.y}
-                canDelete={list.id !== defaultListId}
-                onRename={() => setRenaming(list.id)}
-                onDelete={() => remove(list)}
-                onClose={() => setMenu(null)}
-              />
-            )}
-          </li>
-        ))}
-        <li>
-          {adding ? (
-            <NameInput initial="" label="New list name" onDone={create} />
-          ) : (
-            <button
-              type="button"
-              class="new-list"
-              disabled={!online}
-              title={offline}
-              onClick={() => setAdding(true)}
-            >
-              + New list
-            </button>
+      {accounts.map((account) => (
+        <section class="sidebar-account" key={account.id} aria-label={account.label}>
+          <h3 title={account.email ?? undefined}>{account.label}</h3>
+          {!account.signedOut && (
+            <ul class="sidebar-lists">
+              {account.lists.map((list) => (
+                <li
+                  key={list.id}
+                  style={{ '--chip': listColour(list.id) }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    // The context-menu key reports no pointer position; open under the row instead.
+                    const r = e.currentTarget.getBoundingClientRect();
+                    const byKey = e.clientX === 0 && e.clientY === 0;
+                    openMenu(list.id, byKey ? r.left : e.clientX, byKey ? r.bottom + 4 : e.clientY);
+                  }}
+                >
+                  {renaming === list.id ? (
+                    <NameInput
+                      initial={list.title}
+                      label={`New name for ${list.title}`}
+                      onDone={(value) => rename(list, value)}
+                    />
+                  ) : (
+                    <label class="check">
+                      <input
+                        type="checkbox"
+                        checked={filters.lists?.has(list.id) ?? true}
+                        onChange={() => toggleList(list.id)}
+                      />
+                      <span class="dot" />
+                      {list.title}
+                    </label>
+                  )}
+                  {menu?.id === list.id && (
+                    <ListMenu
+                      x={menu.x}
+                      y={menu.y}
+                      canDelete={list.id !== account.defaultListId}
+                      onRename={() => setRenaming(list.id)}
+                      onDelete={() => remove(list)}
+                      onClose={() => setMenu(null)}
+                    />
+                  )}
+                </li>
+              ))}
+              <li>
+                {adding === account.id ? (
+                  <NameInput
+                    initial=""
+                    label={`New list name in ${account.label}`}
+                    onDone={(value) => create(account.id, value)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    class="new-list"
+                    disabled={!online}
+                    title={offline}
+                    onClick={() => setAdding(account.id)}
+                  >
+                    + New list
+                  </button>
+                )}
+              </li>
+            </ul>
           )}
-        </li>
-      </ul>
+          {account.needsSignIn && account.email === null && (
+            <p class="account-hint">Sign in with a different Google account, or remove this one.</p>
+          )}
+          <div class="account-actions">
+            {account.needsSignIn && (
+              <button type="button" class="primary" onClick={() => onSignIn(account.id)}>
+                Sign in
+              </button>
+            )}
+            {!account.signedOut && (
+              <button type="button" onClick={() => onSignOut(account.id)}>
+                Sign out
+              </button>
+            )}
+            <button type="button" class="danger" onClick={() => onRemove(account.id)}>
+              Remove
+            </button>
+          </div>
+        </section>
+      ))}
+      <button
+        type="button"
+        class="add-account"
+        disabled={!online}
+        title={offline}
+        onClick={onAddAccount}
+      >
+        Add account
+      </button>
       <FilterMenu filters={filters} onFilters={onFilters} />
       {showSelect && (
         <button type="button" aria-pressed={selecting} onClick={onToggleSelect}>

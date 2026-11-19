@@ -14,6 +14,8 @@ let lastPointer = 'mouse';
 
 interface Props {
   card: CardData;
+  // The list's name, with its account's label where two accounts share the name.
+  listName: string;
   now: Date;
   onOpen(id: string): void;
   // In selection mode a click ticks the card instead of opening it.
@@ -23,8 +25,17 @@ interface Props {
   onMenu?(id: string, x: number, y: number, touch?: boolean): void;
 }
 
-export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu }: Props) {
-  const { task, list, entry, colour } = card;
+export function Card({
+  card,
+  listName,
+  now,
+  onOpen,
+  selecting,
+  selected,
+  onToggle,
+  onMenu,
+}: Props) {
+  const { task, entry, colour } = card;
   const priority = priorityOf(entry);
   const marker = priority === 'medium' ? null : MARKERS[priority];
   const overdue = task.due !== null && !task.completed && task.due < localDate(now);
@@ -75,7 +86,7 @@ export function Card({ card, now, onOpen, selecting, selected, onToggle, onMenu 
           {task.title}
         </span>
         <span class="card-meta">
-          <span class="chip-static">{list.title}</span>
+          <span class="chip-static">{listName}</span>
           {task.due && (
             <time class={overdue ? 'due overdue' : 'due'} dateTime={task.due}>
               {formatDue(task.due)}
