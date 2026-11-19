@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from 'preact/compat';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'preact/compat';
 import type { AccountSet } from '../accounts/set';
 import { statusText } from './Header';
 import { useOnline } from './hooks';
@@ -8,6 +8,8 @@ export interface SettingsAccount {
   label: string;
   // The Google name, which an empty name falls back to.
   googleName: string | null;
+  // False when there is nothing to clear, so an empty save would only add a sync.
+  hasSavedName: boolean;
   email: string | null;
   signedOut: boolean;
   needsSignIn: boolean;
@@ -94,14 +96,32 @@ export function Settings({
   const [renaming, setRenaming] = useState<string | null>(null);
   const status = useRowStatus(set);
   const online = useOnline();
+  const renameButtons = useRef(new Map<string, HTMLButtonElement>());
+  const closed = useRef<string | null>(null);
+
+  // The field is gone once it closes, so focus would drop to the page. A blur to another
+  // control keeps focus where the person put it.
+  useLayoutEffect(() => {
+    if (renaming !== null) return;
+    const id = closed.current;
+    closed.current = null;
+    if (id === null) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) renameButtons.current.get(id)?.focus();
+  }, [renaming]);
 
   function rename(account: SettingsAccount, value: string | null) {
+    closed.current = account.id;
     setRenaming(null);
     if (value === null) return;
     const name = value.trim();
+    if (name === '' && !account.hasSavedName) return;
     // Saving the shown name unchanged would pin it, and a later Google rename wouldn't show.
     if (name !== account.label) onRename(account.id, name);
   }
+
+  const rowStatus = (account: SettingsAccount) =>
+    account.signedOut ? 'Signed out' : (status[account.id] ?? '');
 
   return (
     <div class="settings">
@@ -124,7 +144,7 @@ export function Settings({
                 )}
                 {account.email && <span class="settings-email">{account.email}</span>}
               </div>
-              <p class="settings-status">{account.signedOut ? 'Signed out' : status[account.id]}</p>
+              {rowStatus(account) && <p class="settings-status">{rowStatus(account)}</p>}
               {account.needsSignIn && account.refused && (
                 <p class="account-hint">
                   Sign in with a different Google account, or remove this one.
@@ -132,21 +152,43 @@ export function Settings({
               )}
               <div class="account-actions">
                 {renaming !== account.id && (
-                  <button type="button" onClick={() => setRenaming(account.id)}>
+                  <button
+                    type="button"
+                    aria-label={`Rename ${account.label}`}
+                    ref={(el) => {
+                      if (el) renameButtons.current.set(account.id, el);
+                      else renameButtons.current.delete(account.id);
+                    }}
+                    onClick={() => setRenaming(account.id)}
+                  >
                     Rename
                   </button>
                 )}
                 {account.needsSignIn && (
-                  <button type="button" class="primary" onClick={() => onSignIn(account.id)}>
+                  <button
+                    type="button"
+                    class="primary"
+                    aria-label={`Sign in to ${account.label}`}
+                    onClick={() => onSignIn(account.id)}
+                  >
                     Sign in
                   </button>
                 )}
                 {!account.signedOut && (
-                  <button type="button" onClick={() => onSignOut(account.id)}>
+                  <button
+                    type="button"
+                    aria-label={`Sign out of ${account.label}`}
+                    onClick={() => onSignOut(account.id)}
+                  >
                     Sign out
                   </button>
                 )}
-                <button type="button" class="danger" onClick={() => onRemove(account.id)}>
+                <button
+                  type="button"
+                  class="danger"
+                  aria-label={`Remove ${account.label}`}
+                  onClick={() => onRemove(account.id)}
+                >
                   Remove
                 </button>
               </div>

@@ -319,6 +319,7 @@ export function App({ accounts, workspace }: Props) {
       }),
     onRenameList: (id: string, title: string) =>
       listChange('rename the list', () => workspace.renameList(id, title)),
+    onSignIn: (id: string) => void signIn(id),
     onDeleteList: (id: string) =>
       listChange('delete the list', async () => {
         await workspace.deleteList(id);
@@ -386,6 +387,7 @@ export function App({ accounts, workspace }: Props) {
                 id: a.record.id,
                 label: workspace.accountLabel(a.record.id),
                 googleName: a.record.label ?? a.record.email,
+                hasSavedName: Boolean(a.store.snapshot().accountName?.name),
                 email: a.record.email,
                 signedOut: a.record.signedOut,
                 needsSignIn: a.record.signedOut || a.engine.status().kind === 'signin',

@@ -84,7 +84,8 @@ export function Header({
           aria-label="Settings"
           aria-current={route === 'settings' ? 'page' : undefined}
         >
-          ⚙
+          {/* The variation selector makes iOS draw text, not a colour emoji. */}
+          ⚙︎
         </a>
         <div class="status">
           <div class="status-text" aria-live="polite">

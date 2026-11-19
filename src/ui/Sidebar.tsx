@@ -30,6 +30,7 @@ interface Props {
   onCreateList(accountId: string, title: string): Promise<boolean>;
   onRenameList(id: string, title: string): Promise<boolean>;
   onDeleteList(id: string): Promise<boolean>;
+  onSignIn(accountId: string): void;
 }
 
 // Enter or leaving the field saves; Escape cancels (null).
@@ -95,6 +96,7 @@ export function Sidebar({
   onCreateList,
   onRenameList,
   onDeleteList,
+  onSignIn,
 }: Props) {
   const online = useOnline();
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -136,6 +138,19 @@ export function Sidebar({
       {accounts.map((account) => (
         <section class="sidebar-account" key={account.id} aria-label={account.label}>
           <h3 title={account.email ?? undefined}>{account.label}</h3>
+          {account.signedOut && (
+            <>
+              <p class="sidebar-signed-out">Signed out</p>
+              <button
+                type="button"
+                class="sidebar-sign-in"
+                aria-label={`Sign in to ${account.label}`}
+                onClick={() => onSignIn(account.id)}
+              >
+                Sign in
+              </button>
+            </>
+          )}
           {!account.signedOut && (
             <ul class="sidebar-lists">
               {account.lists.map((list) => (

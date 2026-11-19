@@ -1076,6 +1076,22 @@ textarea:hover {
   overflow-wrap: anywhere;
 }
 
+.sidebar-signed-out {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.sidebar-sign-in {
+  align-self: flex-start;
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-card);
+}
+
 .account-actions {
   display: flex;
   flex-wrap: wrap;
