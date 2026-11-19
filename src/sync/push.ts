@@ -79,7 +79,7 @@ function dropOps(s: Snapshot, gone: Set<string>): Pick<Change, 'dequeue' | 'requ
       (q.op.kind === 'create' && q.op.task.parent !== undefined && gone.has(q.op.task.parent)) ||
       (q.op.kind === 'reorder' && gone.has(q.op.parent)),
   );
-  const droppedSeqs = new Set(dropped.map((q) => q.seq));
+  const droppedSeqs = new Set([...dropped.map((q) => q.seq), ...handoffsOf(s, dropped)]);
   const requeue = s.queued.flatMap((q): QueuedOp[] => {
     if (droppedSeqs.has(q.seq)) return [];
     const { op } = q;
@@ -98,6 +98,26 @@ function dropOps(s: Snapshot, gone: Set<string>): Pick<Change, 'dequeue' | 'requ
     return [];
   });
   return { dequeue: [...droppedSeqs], requeue };
+}
+
+// The handoff is all that lets the other account delete the original, so a copy that
+// lost any op for itself or one of its steps must never reach it.
+function handoffsOf(s: Snapshot, dropped: QueuedOp[]): number[] {
+  const touched = new Set(
+    dropped.flatMap(({ op }) => {
+      const id = idOf(op);
+      const parent =
+        op.kind === 'create'
+          ? op.task.parent
+          : op.kind === 'reorder'
+            ? op.parent
+            : s.tasks.find((t) => t.id === id)?.parent;
+      return parent ? [id, parent] : [id];
+    }),
+  );
+  return s.queued.flatMap((q) =>
+    q.op.kind === 'handoff' && touched.has(q.op.taskId) ? [q.seq] : [],
+  );
 }
 
 // The nearest sibling before goneId in the local order that is still expected to exist
@@ -294,7 +314,9 @@ function dropRefused(s: Snapshot, head: QueuedOp, status: number): Change {
   const dropped =
     head.op.kind === 'create'
       ? dropOps(s, new Set([id]))
-      : { dequeue: s.queued.some((q) => q.seq === head.seq) ? [head.seq] : [] };
+      : s.queued.some((q) => q.seq === head.seq)
+        ? { dequeue: [head.seq, ...handoffsOf(s, [head])] }
+        : { dequeue: [] };
   return {
     ...dropped,
     ...(head.op.kind === 'transferDelete' && { meta: { hidden: unhide(s, head.op.taskId) } }),

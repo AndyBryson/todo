@@ -12,6 +12,7 @@ import {
   moveCard,
   moveToList,
   reorderSubtask,
+  setCompleted,
 } from '../store/edits';
 import { type ReplayHooks, replay } from './push';
 
@@ -644,6 +645,67 @@ describe('moves between accounts', () => {
       },
     ]);
     expect(store.snapshot().queued).toEqual([]);
+  });
+
+  // A parent create, two step creates, a completion for the first step, then the handoff.
+  async function queueCopy(): Promise<void> {
+    await store.commit({ dequeue: store.snapshot().queued.map((q) => q.seq) });
+    const id = await addTask(store, { listId: 'L1', title: 'Copy', pinned: false }, NOW);
+    const a = await addSubtask(store, id, 'A', NOW);
+    await addSubtask(store, id, 'B', NOW);
+    await setCompleted(store, a, true, NOW);
+    await store.commit({
+      enqueue: [
+        {
+          kind: 'handoff',
+          listId: 'L1',
+          taskId: id,
+          source: { accountId: 'a', listId: 'L9', taskId: 'orig', title: 'Copy' },
+          fingerprint,
+        },
+      ],
+    });
+  }
+  const recording = (calls: Op[]): ReplayHooks => ({
+    async handoff(op) {
+      calls.push(op);
+    },
+  });
+
+  test('a refused step create stops the handoff', async () => {
+    const calls: Op[] = [];
+    await queueCopy();
+    google.failOn('insertTask', new HttpError(400, 'bad'), { after: 2, times: 1 });
+    expect(await replay(google, store, recording(calls))).toBe('done');
+    expect(calls).toEqual([]);
+    expect(store.snapshot().queued.filter((q) => q.op.kind === 'handoff')).toEqual([]);
+  });
+
+  test('a step completion that finds the step gone stops the handoff', async () => {
+    const calls: Op[] = [];
+    await queueCopy();
+    google.failOn('getTask', new NotFoundError('gone'), { times: 1 });
+    expect(await replay(google, store, recording(calls))).toBe('done');
+    expect(google.calls.map((c) => c.method)).toContain('getTask');
+    expect(calls).toEqual([]);
+    expect(store.snapshot().queued.filter((q) => q.op.kind === 'handoff')).toEqual([]);
+  });
+
+  test('a refused step completion stops the handoff', async () => {
+    const calls: Op[] = [];
+    await queueCopy();
+    google.failOn('patchTask', new HttpError(400, 'bad'), { times: 1 });
+    expect(await replay(google, store, recording(calls))).toBe('done');
+    expect(google.calls.map((c) => c.method)).toContain('patchTask');
+    expect(calls).toEqual([]);
+    expect(store.snapshot().queued.filter((q) => q.op.kind === 'handoff')).toEqual([]);
+  });
+
+  test('a complete copy still hands off', async () => {
+    const calls: Op[] = [];
+    await queueCopy();
+    expect(await replay(google, store, recording(calls))).toBe('done');
+    expect(calls.map((op) => op.kind)).toEqual(['handoff']);
   });
 
   test('a failing handoff stays queued', async () => {
