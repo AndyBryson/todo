@@ -26,6 +26,20 @@ describe('loadRegistry', () => {
     expect(JSON.parse(s.data.get('todo.accounts') ?? 'null')).toEqual([record]);
   });
 
+  it('keeps the old keys when the registry cannot be saved', () => {
+    const token = '{"token":"t","expiresAt":9}';
+    const s = memory({ 'todo.token': token, 'todo.consented': '1' });
+    const setItem = s.setItem;
+    s.setItem = (k, v) => {
+      if (k === 'todo.accounts') throw new Error('QuotaExceededError');
+      setItem(k, v);
+    };
+    loadRegistry(s);
+    // The next start migrates again and must still find the token.
+    expect(s.data.get('todo.token')).toBe(token);
+    expect(s.data.get('todo.consented')).toBe('1');
+  });
+
   it('a fresh device also gets a first record on db todo', () => {
     const s = memory();
     const records = loadRegistry(s);

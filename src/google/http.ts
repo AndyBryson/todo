@@ -140,7 +140,9 @@ export function createHttpGoogle(
   return {
     async getAccount() {
       const res = await request(`${DRIVE_ABOUT}?fields=user(emailAddress,displayName)`);
-      const { user }: { user: { emailAddress: string; displayName?: string } } = await res.json();
+      const { user }: { user?: { emailAddress?: string; displayName?: string } } = await res.json();
+      // Without an email the token can't be matched to an account, so this counts as a failed call.
+      if (!user?.emailAddress) throw new HttpError(502, 'No account returned');
       return { email: user.emailAddress, name: user.displayName ?? '' };
     },
 

@@ -330,4 +330,13 @@ describe('getAccount', () => {
     const { google } = api(() => json({}, 401));
     await expect(google.getAccount()).rejects.toBeInstanceOf(AuthError);
   });
+
+  test('an answer with no user or no email is a 502, never an account', async () => {
+    for (const body of [{}, { user: {} }, { user: { displayName: 'A' } }]) {
+      const { google } = api(() => json(body));
+      const error = await google.getAccount().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(HttpError);
+      expect(error).toMatchObject({ status: 502, message: 'No account returned' });
+    }
+  });
 });

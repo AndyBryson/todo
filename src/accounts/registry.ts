@@ -30,11 +30,13 @@ function isRecord(r: unknown): r is AccountRecord {
   );
 }
 
-export function saveRegistry(storage: KeyValue, records: AccountRecord[]): void {
+export function saveRegistry(storage: KeyValue, records: AccountRecord[]): boolean {
   try {
     storage.setItem(REGISTRY_KEY, JSON.stringify(records));
+    return true;
   } catch {
     // Without storage the list lasts only as long as this window.
+    return false;
   }
 }
 
@@ -47,23 +49,28 @@ function migrate(storage: KeyValue): AccountRecord[] {
     db: FIRST_DB,
     signedOut: false,
   };
+  const moves = [
+    ['todo.token', tokenKey(id)],
+    ['todo.consented', consentKey(id)],
+  ] as const;
   try {
-    // Moved rather than copied so a later sign-in on the old keys cannot diverge.
-    for (const [from, to] of [
-      ['todo.token', tokenKey(id)],
-      ['todo.consented', consentKey(id)],
-    ] as const) {
+    for (const [from, to] of moves) {
       const value = storage.getItem(from);
-      if (value !== null) {
-        storage.setItem(to, value);
-        storage.removeItem(from);
-      }
+      if (value !== null) storage.setItem(to, value);
     }
   } catch {
     // Unreadable storage just means signing in again.
   }
   const records = [record];
-  saveRegistry(storage, records);
+  // Without a saved registry the next start migrates again, and needs the old keys to do it.
+  if (saveRegistry(storage, records)) {
+    try {
+      // Moved rather than copied so a later sign-in on the old keys cannot diverge.
+      for (const [from] of moves) storage.removeItem(from);
+    } catch {
+      // Left behind, they are only read by a migration, which has now run.
+    }
+  }
   return records;
 }
 
