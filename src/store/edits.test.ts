@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { subtasksOf } from '../domain/subtasks';
 import { entry, task } from '../domain/test-fixtures';
-import { openStore, renameChange, type Store } from './db';
+import { type Op, openStore, renameChange, type Store } from './db';
 import {
   addSubtask,
   addTask,
+  copyToAccount,
   deleteTask,
   editTask,
+  hasUnsent,
   moveCard,
   moveCardsToBottom,
   moveCardToBottom,
   moveToList,
+  putEntries,
   reorderSubtask,
   setCompleted,
   setPinned,
@@ -673,4 +676,232 @@ test('entry priority and unknown fields survive a store round trip', async () =>
   await store.commit({ entries: { x: e } });
   const reopened = await openStore(name);
   expect(reopened.snapshot().entries.x).toEqual(e);
+});
+
+describe('across accounts', () => {
+  const others = {
+    x2: entry({ column: 'Next', openColumn: 'Next', rank: 1024 }),
+    y2: entry({ column: 'Next', openColumn: 'Next', rank: 2048 }),
+  };
+
+  beforeEach(async () => {
+    await store.commit({
+      putTasks: [task('a'), task('b')],
+      replaceEntries: { a: entry({ rank: 1 }), b: entry({ rank: 2 }) },
+    });
+  });
+
+  test("a drop between another account's cards takes a rank between them", async () => {
+    const foreign = await moveCard(store, 'a', 'Next', 'x2', NOW, others);
+    const rank = store.snapshot().entries.a?.rank ?? 0;
+    expect(rank).toBeGreaterThan(1024);
+    expect(rank).toBeLessThan(2048);
+    expect(foreign).toEqual({});
+  });
+
+  test("a rebalance returns the other account's new ranks", async () => {
+    const tight = {
+      x2: entry({ column: 'Next', openColumn: 'Next', rank: 1 }),
+      y2: entry({ column: 'Next', openColumn: 'Next', rank: 1 + 1e-7 }),
+    };
+    const foreign = await moveCard(store, 'a', 'Next', 'x2', NOW, tight);
+    expect(Object.keys(foreign).sort()).toEqual(['x2', 'y2']);
+    expect(foreign.x2).toMatchObject({ updatedAt: NOW });
+    expect(foreign.y2).toMatchObject({ updatedAt: NOW });
+    const rank = store.snapshot().entries.a?.rank ?? 0;
+    expect(rank).toBeGreaterThan(foreign.x2?.rank ?? 0);
+    expect(rank).toBeLessThan(foreign.y2?.rank ?? 0);
+    expect(store.snapshot().entries.x2).toBeUndefined();
+    expect(store.snapshot().entries.y2).toBeUndefined();
+  });
+
+  test("moving several cards to the bottom lands below the other account's bottom card", async () => {
+    await moveCardsToBottom(store, ['b', 'a'], 'Next', NOW, others);
+    const { entries } = store.snapshot();
+    expect(entries.a?.rank).toBeGreaterThan(2048);
+    expect(entries.b?.rank).toBeGreaterThan(entries.a?.rank ?? 0);
+  });
+
+  test("moving one card to the bottom lands below the other account's bottom card", async () => {
+    await moveCardToBottom(store, 'a', 'Next', NOW, others);
+    expect(store.snapshot().entries.a?.rank).toBeGreaterThan(2048);
+  });
+
+  test("a quick add goes below the other account's Backlog", async () => {
+    const id = await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW, {
+      z: entry({ rank: 9000 }),
+    });
+    expect(store.snapshot().entries[id]?.rank).toBeGreaterThan(9000);
+  });
+
+  test("reopening lands below the other account's cards in the open column", async () => {
+    await store.commit({
+      putTasks: [task('a', { completed: true, completedAt: OLD_DONE })],
+      entries: { a: entry({ column: 'Done', openColumn: 'Next' }) },
+    });
+    await setCompleted(store, 'a', false, NOW, others);
+    expect(store.snapshot().entries.a).toMatchObject({ column: 'Next' });
+    expect(store.snapshot().entries.a?.rank).toBeGreaterThan(2048);
+  });
+
+  test('putEntries writes only ids this store already has', async () => {
+    await putEntries(store, {
+      a: entry({ column: 'Doing', openColumn: 'Doing', updatedAt: NOW }),
+      x2: entry({ updatedAt: NOW }),
+    });
+    const { entries } = store.snapshot();
+    expect(entries.a).toMatchObject({ column: 'Doing', updatedAt: NOW });
+    expect(entries.x2).toBeUndefined();
+  });
+});
+
+describe('copyToAccount', () => {
+  const pos = (n: number) => String(n).padStart(20, '0');
+  let target: Store;
+
+  beforeEach(async () => {
+    target = await openStore(`test-${crypto.randomUUID()}`);
+    await target.commit({ replaceRemote: { lists: [{ id: 'T1', title: 'Theirs' }], tasks: [] } });
+    await store.commit({
+      putTasks: [
+        task('p', {
+          title: 'Parent',
+          notes: 'Some notes',
+          due: '2026-12-01',
+          completed: true,
+          completedAt: OLD_DONE,
+          updated: '2026-11-15T00:00:00Z',
+        }),
+        task('s2', {
+          parent: 'p',
+          title: 'Second',
+          position: pos(1),
+          updated: '2026-11-15T02:00:00Z',
+        }),
+        task('s1', {
+          parent: 'p',
+          title: 'First',
+          position: pos(0),
+          completed: true,
+          completedAt: OLD_DONE,
+          updated: '2026-11-15T01:00:00Z',
+        }),
+      ],
+      entries: {
+        p: entry({
+          column: 'Done',
+          openColumn: 'Doing',
+          rank: 3000,
+          priority: 'high',
+          extra: { future: 1 },
+        }),
+      },
+    });
+  });
+
+  test('copyToAccount copies steps in order with their done state', async () => {
+    await copyToAccount(store, target, 'acc-a', 'acc-b', 'p', 'T1', NOW);
+    const t = target.snapshot();
+    const queued = t.queued.map((q) => q.op);
+    const copy = t.tasks.find((x) => x.parent === null);
+    const first = t.tasks.find((x) => x.title === 'First');
+    const second = t.tasks.find((x) => x.title === 'Second');
+    if (!copy || !first || !second) throw new Error('copy missing');
+    for (const id of [copy.id, first.id, second.id]) expect(id).toMatch(/^local-/);
+    expect(first.parent).toBe(copy.id);
+    expect(second.parent).toBe(copy.id);
+    expect(copy).toMatchObject({ listId: 'T1', completed: true, updated: NOW });
+    expect(subtasksOf(t.tasks, copy.id).map((x) => x.title)).toEqual(['First', 'Second']);
+
+    const done = { set: { completed: true }, base: { completed: false } };
+    expect(queued).toEqual([
+      {
+        kind: 'create',
+        listId: 'T1',
+        tempId: copy.id,
+        task: { title: 'Parent', notes: 'Some notes', due: '2026-12-01' },
+      },
+      { kind: 'patch', listId: 'T1', taskId: copy.id, ...done },
+      { kind: 'create', listId: 'T1', tempId: first.id, task: { title: 'First', parent: copy.id } },
+      { kind: 'patch', listId: 'T1', taskId: first.id, ...done },
+      {
+        kind: 'create',
+        listId: 'T1',
+        tempId: second.id,
+        task: { title: 'Second', parent: copy.id, previous: first.id },
+      },
+      {
+        kind: 'handoff',
+        listId: 'T1',
+        taskId: copy.id,
+        source: { accountId: 'acc-a', listId: 'L1', taskId: 'p', title: 'Parent' },
+        fingerprint: {
+          updated: '2026-11-15T00:00:00Z',
+          steps: { s1: '2026-11-15T01:00:00Z', s2: '2026-11-15T02:00:00Z' },
+        },
+      },
+    ]);
+    expect(t.entries[copy.id]).toEqual({
+      column: 'Done',
+      openColumn: 'Doing',
+      rank: 3000,
+      pinned: false,
+      priority: 'high',
+      extra: { future: 1 },
+      updatedAt: NOW,
+    });
+    expect(store.snapshot().hidden).toEqual({ p: 'acc-b' });
+  });
+
+  test('copyToAccount refuses while the task has unsent changes', async () => {
+    await store.commit({
+      enqueue: [
+        {
+          kind: 'patch',
+          listId: 'L1',
+          taskId: 's2',
+          set: { title: 'X' },
+          base: { title: 'Second' },
+        },
+      ],
+    });
+    const before = { source: store.snapshot(), target: target.snapshot() };
+    await expect(copyToAccount(store, target, 'acc-a', 'acc-b', 'p', 'T1', NOW)).rejects.toThrow();
+    expect(store.snapshot()).toBe(before.source);
+    expect(target.snapshot()).toBe(before.target);
+  });
+
+  test('copyToAccount refuses a step', async () => {
+    await expect(copyToAccount(store, target, 'acc-a', 'acc-b', 's1', 'T1', NOW)).rejects.toThrow();
+    expect(target.snapshot().queued).toEqual([]);
+    expect(store.snapshot().hidden).toEqual({});
+  });
+});
+
+describe('hasUnsent', () => {
+  test('sees ops on the task, on its steps, and creates or reorders naming it as parent', async () => {
+    await store.commit({ putTasks: [task('p'), task('s', { parent: 'p' })] });
+    const withOp = (op: Op) => ({ ...store.snapshot(), queued: [{ seq: 1, op }] });
+    expect(hasUnsent(store.snapshot(), 'p')).toBe(false);
+    expect(hasUnsent(withOp({ kind: 'delete', listId: 'L1', taskId: 'p' }), 'p')).toBe(true);
+    expect(hasUnsent(withOp({ kind: 'delete', listId: 'L1', taskId: 's' }), 'p')).toBe(true);
+    expect(
+      hasUnsent(
+        withOp({
+          kind: 'create',
+          listId: 'L1',
+          tempId: 'local-n',
+          task: { title: 'n', parent: 'p' },
+        }),
+        'p',
+      ),
+    ).toBe(true);
+    expect(
+      hasUnsent(
+        withOp({ kind: 'reorder', listId: 'L1', taskId: 'local-n', parent: 'p', previous: null }),
+        'p',
+      ),
+    ).toBe(true);
+    expect(hasUnsent(withOp({ kind: 'delete', listId: 'L1', taskId: 'x' }), 'p')).toBe(false);
+  });
 });

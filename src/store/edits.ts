@@ -10,8 +10,8 @@ import {
   type Priority,
   type Task,
 } from '../domain/types';
-import type { TaskPatch } from '../google/api';
-import type { Change, Snapshot, Store } from './db';
+import type { NewTask, TaskPatch } from '../google/api';
+import type { Change, Fingerprint, Op, Snapshot, Store } from './db';
 
 // An edit may still hold a temporary ID that a replay has since renamed.
 export function resolveId(s: Snapshot, taskId: string): string {
@@ -42,13 +42,28 @@ function stamp(changes: BoardEntries, now: string): BoardEntries {
   return stamped;
 }
 
+// Splits board changes into this store's and those for cards owned by other accounts.
+function split(s: Snapshot, changes: BoardEntries): { own: BoardEntries; foreign: BoardEntries } {
+  const own: BoardEntries = {};
+  const foreign: BoardEntries = {};
+  for (const [id, e] of Object.entries(changes)) {
+    if (Object.hasOwn(s.entries, id)) own[id] = e;
+    else foreign[id] = e;
+  }
+  return { own, foreign };
+}
+
 // Every edit reads inside the commit callback, so it sees the latest committed
 // state even when another edit is still in flight.
+//
+// `others` holds the other accounts' board entries. Cards from every account share a
+// column, so ranks and the bottom of a column are worked out over all of them.
 
 export async function addTask(
   store: Store,
   input: { listId: string; title: string; pinned: boolean },
   now: string,
+  others: BoardEntries = {},
 ): Promise<string> {
   const title = input.title.trim();
   if (!title) throw new Error('A task needs a title');
@@ -72,7 +87,7 @@ export async function addTask(
     entries: {
       [id]: {
         column: 'Backlog',
-        rank: appendRank(ranksIn(s.entries, 'Backlog')),
+        rank: appendRank(ranksIn({ ...others, ...s.entries }, 'Backlog')),
         pinned: input.pinned,
         openColumn: 'Backlog',
         updatedAt: now,
@@ -111,13 +126,21 @@ export async function editTask(
   });
 }
 
-function completionChange(s: Snapshot, task: Task, completed: boolean, now: string): Change {
+function completionChange(
+  s: Snapshot,
+  task: Task,
+  completed: boolean,
+  now: string,
+  others: BoardEntries,
+): Change {
   if (task.completed === completed) return {};
   const entry = s.entries[task.id];
   let changed: BoardEntries | undefined;
   if (entry) {
     if (completed) changed = { [task.id]: completeEntry(entry, now) };
-    else if (entry.column === 'Done') changed = { [task.id]: reopenEntry(entry, s.entries, now) };
+    else if (entry.column === 'Done') {
+      changed = { [task.id]: reopenEntry(entry, { ...others, ...s.entries }, now) };
+    }
   }
   return {
     putTasks: [{ ...task, completed, completedAt: completed ? now : null }],
@@ -139,10 +162,17 @@ export async function setCompleted(
   requestedId: string,
   completed: boolean,
   now: string,
+  others: BoardEntries = {},
 ): Promise<void> {
   await store.commit((s) =>
-    completionChange(s, requireTask(s, resolveId(s, requestedId)), completed, now),
+    completionChange(s, requireTask(s, resolveId(s, requestedId)), completed, now, others),
   );
+}
+
+interface Moved {
+  change: Change;
+  // Rebalanced ranks for other accounts' cards, already stamped.
+  foreign: BoardEntries;
 }
 
 function moveChange(
@@ -151,19 +181,26 @@ function moveChange(
   column: Column,
   insertAfter: string | null,
   now: string,
-): Change {
+  others: BoardEntries,
+): Moved {
   const task = requireTask(s, taskId);
   const entry = requireEntry(s, taskId);
 
   if (column === 'Done') {
-    return entry.column === 'Done' ? {} : completionChange(s, task, true, now);
+    return {
+      change: entry.column === 'Done' ? {} : completionChange(s, task, true, now, others),
+      foreign: {},
+    };
   }
 
   // Reopen and placement go in one commit so the card never shows in its old column.
-  const reopen = entry.column === 'Done' ? completionChange(s, task, false, now) : {};
-  const entries = { ...s.entries, ...reopen.entries };
-  const placed = stamp(placeInColumn(entries, taskId, column, insertAfter), now);
-  return { ...reopen, entries: { ...reopen.entries, ...placed } };
+  const reopen = entry.column === 'Done' ? completionChange(s, task, false, now, others) : {};
+  const entries = { ...others, ...s.entries, ...reopen.entries };
+  const { own, foreign } = split(
+    s,
+    stamp(placeInColumn(entries, taskId, column, insertAfter), now),
+  );
+  return { change: { ...reopen, entries: { ...reopen.entries, ...own } }, foreign };
 }
 
 export async function moveCard(
@@ -172,16 +209,23 @@ export async function moveCard(
   column: Column,
   requestedAfter: string | null,
   now: string,
-): Promise<void> {
-  await store.commit((s) =>
-    moveChange(
+  others: BoardEntries = {},
+): Promise<BoardEntries> {
+  let foreign: BoardEntries = {};
+  await store.commit((s) => {
+    foreign = {};
+    const moved = moveChange(
       s,
       resolveId(s, requestedId),
       column,
       requestedAfter === null ? null : resolveId(s, requestedAfter),
       now,
-    ),
-  );
+      others,
+    );
+    foreign = moved.foreign;
+    return moved.change;
+  });
+  return foreign;
 }
 
 // The bottom is found inside the commit, so a stale view cannot drop the card at the top.
@@ -190,18 +234,24 @@ export async function moveCardToBottom(
   requestedId: string,
   column: Column,
   now: string,
-): Promise<void> {
+  others: BoardEntries = {},
+): Promise<BoardEntries> {
+  let foreign: BoardEntries = {};
   await store.commit((s) => {
+    foreign = {};
     const taskId = resolveId(s, requestedId);
-    const last = Object.entries(s.entries)
+    const last = Object.entries({ ...others, ...s.entries })
       .filter(([id, e]) => id !== taskId && e.column === column)
       .sort(([, a], [, b]) => a.rank - b.rank)
       .at(-1);
     // Already the bottom card: re-ranking would only bump updatedAt and win a board merge for nothing.
     const entry = s.entries[taskId];
     if (entry?.column === column && (!last || last[1].rank < entry.rank)) return {};
-    return moveChange(s, taskId, column, last?.[0] ?? null, now);
+    const moved = moveChange(s, taskId, column, last?.[0] ?? null, now, others);
+    foreign = moved.foreign;
+    return moved.change;
   });
+  return foreign;
 }
 
 // One save for the whole selection: each card's change is built on the state the
@@ -211,8 +261,11 @@ export async function moveCardsToBottom(
   requestedIds: readonly string[],
   column: Column,
   now: string,
-): Promise<void> {
+  others: BoardEntries = {},
+): Promise<BoardEntries> {
+  let foreign: BoardEntries = {};
   await store.commit((s) => {
+    foreign = {};
     const ids = [...new Set(requestedIds.map((id) => resolveId(s, id)))];
     const moving = ids
       .flatMap((id) => {
@@ -236,9 +289,13 @@ export async function moveCardsToBottom(
       entries: {},
       enqueue: [],
     };
-    let after = column === 'Done' ? null : (bottomOf(s, column) ?? null);
+    let workingOthers = others;
+    let after = column === 'Done' ? null : (bottomOf({ ...others, ...s.entries }, column) ?? null);
     for (const { id } of moving) {
-      const change = moveChange(working, id, column, after, now);
+      const moved = moveChange(working, id, column, after, now, workingOthers);
+      const change = moved.change;
+      workingOthers = { ...workingOthers, ...moved.foreign };
+      foreign = { ...foreign, ...moved.foreign };
       const put = change.putTasks ?? [];
       working = {
         ...working,
@@ -252,13 +309,139 @@ export async function moveCardsToBottom(
     }
     return moving.length === 0 ? {} : merged;
   });
+  return foreign;
 }
 
-function bottomOf(s: Snapshot, column: Column): string | undefined {
-  return Object.entries(s.entries)
+function bottomOf(entries: BoardEntries, column: Column): string | undefined {
+  return Object.entries(entries)
     .filter(([, e]) => e.column === column)
     .sort(([, a], [, b]) => a.rank - b.rank)
     .at(-1)?.[0];
+}
+
+// For the rebalanced ranks a move hands back: each store takes only its own cards.
+export async function putEntries(store: Store, entries: BoardEntries): Promise<void> {
+  await store.commit((s) => {
+    const own = split(s, entries).own;
+    return Object.keys(own).length === 0 ? {} : { entries: own };
+  });
+}
+
+function opNamesTask(op: Op, ids: ReadonlySet<string>, parentId: string): boolean {
+  switch (op.kind) {
+    case 'create':
+      return ids.has(op.tempId) || op.task.parent === parentId;
+    case 'reorder':
+      return ids.has(op.taskId) || op.parent === parentId;
+    default:
+      return ids.has(op.taskId);
+  }
+}
+
+// A copy is built from the mirror, so anything still waiting to reach Google would be
+// lost from the copy and then deleted with the original.
+export function hasUnsent(s: Snapshot, taskId: string): boolean {
+  const ids = new Set([taskId, ...s.tasks.filter((t) => t.parent === taskId).map((t) => t.id)]);
+  return s.queued.some((q) => opNamesTask(q.op, ids, taskId));
+}
+
+// Moves between accounts are a copy in the target and, once that copy is safely made,
+// a checked delete of the original. Until then the original is only hidden.
+export async function copyToAccount(
+  source: Store,
+  target: Store,
+  sourceAccountId: string,
+  targetAccountId: string,
+  requestedId: string,
+  toListId: string,
+  now: string,
+): Promise<void> {
+  let taskId = requestedId;
+  await target.commit(() => {
+    const s = source.snapshot();
+    taskId = resolveId(s, requestedId);
+    const original = requireTask(s, taskId);
+    if (original.parent !== null) throw new Error('A step moves with its parent');
+    if (hasUnsent(s, taskId)) throw new Error('This task has changes still waiting to be sent');
+
+    const steps = subtasksOf(s.tasks, taskId);
+    const copyId = `local-${crypto.randomUUID()}`;
+    const stepIds = steps.map(() => `local-${crypto.randomUUID()}`);
+    // Local positions keep the steps in order until the next pull brings Google's.
+    const positions = renumber(stepIds);
+
+    const copyOf = (t: Task, id: string, parent: string | null, position: string): Task => ({
+      ...t,
+      id,
+      listId: toListId,
+      parent,
+      position,
+      updated: now,
+    });
+    // NewTask cannot carry completion, so a done item is created open and then completed.
+    const opsFor = (t: Task, id: string, extra: Partial<NewTask>): Op[] => [
+      {
+        kind: 'create',
+        listId: toListId,
+        tempId: id,
+        task: {
+          title: t.title,
+          ...(t.notes && { notes: t.notes }),
+          ...(t.due && { due: t.due }),
+          ...extra,
+        },
+      },
+      ...(t.completed
+        ? [
+            {
+              kind: 'patch',
+              listId: toListId,
+              taskId: id,
+              set: { completed: true },
+              base: { completed: false },
+            } satisfies Op,
+          ]
+        : []),
+    ];
+
+    const fingerprint: Fingerprint = {
+      updated: original.updated,
+      steps: Object.fromEntries(steps.map((t) => [t.id, t.updated])),
+    };
+    const entry = s.entries[taskId];
+    return {
+      putTasks: [
+        copyOf(original, copyId, null, ''),
+        ...steps.map((t, i) =>
+          copyOf(t, stepIds[i] as string, copyId, positions[stepIds[i] as string] as string),
+        ),
+      ],
+      entries: entry ? { [copyId]: { ...entry, updatedAt: now } } : undefined,
+      enqueue: [
+        ...opsFor(original, copyId, {}),
+        ...steps.flatMap((t, i) =>
+          opsFor(t, stepIds[i] as string, {
+            parent: copyId,
+            // Google inserts first unless told otherwise, so name the step copied before.
+            ...(i > 0 && { previous: stepIds[i - 1] as string }),
+          }),
+        ),
+        {
+          kind: 'handoff',
+          listId: toListId,
+          taskId: copyId,
+          source: {
+            accountId: sourceAccountId,
+            listId: original.listId,
+            taskId,
+            title: original.title,
+          },
+          fingerprint,
+        },
+      ],
+    };
+  });
+  await source.commit((s) => ({ meta: { hidden: { ...s.hidden, [taskId]: targetAccountId } } }));
 }
 
 export async function setPinned(
