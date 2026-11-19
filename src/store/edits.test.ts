@@ -99,7 +99,8 @@ test('quick add from Today pins it and puts it at the bottom of Backlog in the c
   expect(s.tasks.find((t) => t.id === id)?.title).toBe('Buy milk');
   expect(s.entries[id]).toMatchObject({ column: 'Backlog', pinned: true });
   expect(s.entries[id]?.rank).toBeGreaterThan(5000);
-  expect(s.lastListId).toBe('L2');
+  // The remembered list is a device key now, kept by the workspace across accounts.
+  expect(s.lastListId).toBeNull();
   expect(await ops()).toEqual([
     { kind: 'create', listId: 'L2', tempId: id, task: { title: 'Buy milk' } },
   ]);

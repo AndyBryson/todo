@@ -94,7 +94,6 @@ export async function addTask(
       },
     },
     enqueue: [{ kind: 'create', listId: input.listId, tempId: id, task: { title } }],
-    meta: { lastListId: input.listId },
   }));
   return id;
 }

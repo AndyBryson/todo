@@ -4,6 +4,7 @@ import {
   type BoardFilters,
   cardVisible,
   DEFAULT_FILTERS,
+  showNewAccounts,
   toggleListFilter,
 } from './filters';
 import { entry, task } from './test-fixtures';
@@ -113,5 +114,24 @@ describe('toggleListFilter', () => {
   test('adds and removes within a partial selection', () => {
     expect(toggleListFilter(new Set(['a']), 'b', all)).toEqual(new Set(['a', 'b']));
     expect(toggleListFilter(new Set(['a', 'b']), 'b', all)).toEqual(new Set(['a']));
+  });
+});
+
+describe('showNewAccounts', () => {
+  const listAccount = { L1: 'a', L2: 'a', T1: 'b', T2: 'b' };
+
+  test("a new account's lists join an active list filter once they arrive", () => {
+    expect(showNewAccounts(new Set(['L1']), new Set(['b']), { L1: 'a', L2: 'a' })).toBeNull();
+    expect(showNewAccounts(new Set(['L1']), new Set(['b']), listAccount)).toEqual({
+      filter: new Set(['L1', 'T1', 'T2']),
+      waiting: new Set(),
+    });
+  });
+
+  test('with no list filter everything shows already, so the wait just ends', () => {
+    expect(showNewAccounts(null, new Set(['b']), listAccount)).toEqual({
+      filter: null,
+      waiting: new Set(),
+    });
   });
 });

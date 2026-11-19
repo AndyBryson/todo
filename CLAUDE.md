@@ -37,7 +37,7 @@ Design: `docs/superpowers/specs/2026-11-17-todo-pwa-design.md`. Implementation p
 - Steps are ordered by Google's `position`. While changes wait, the app renumbers positions locally and the next pull replaces them. Google's insert without `previous` puts a task first, so a step create names its previous sibling.
 - Priority lives on board entries in `board.json`. Medium is stored as no field, and any other stored value reads as Medium.
 - Board entries keep unrecognised fields in `extra`. Never rebuild an entry from the known fields only. `board.json` output must stay byte-stable for unchanged data; a test pins it.
-- Filters (`todo.filter`, `todo.priorities`, `todo.planned`, `todo.sidebar`) are per device and shared by the board and Today. On Today only the list and priority filters apply; the planned-date filter is board-only.
+- Filters (`todo.filter`, `todo.priorities`, `todo.planned`, `todo.sidebar`) and the last list used for quick add (`todo.lastList`) are per device. Filters are shared by the board and Today. On Today only the list and priority filters apply; the planned-date filter is board-only.
 
 ## Testing policy
 
@@ -48,6 +48,7 @@ Tests exist where there are rules that can be wrong. A test must be able to fail
 - Reconcile: new tasks, missing tasks, Done and reopen, Home-created tasks.
 - Queue replay and merge on conflict, using a fake `google/` implementation.
 - Step create and reorder, and replay when a step or its parent was deleted elsewhere.
+- Moves between accounts: handoff, checked delete, sweep.
 
 Not tested: snapshots, render-only component tests, and any test that only asserts a mock was called. UI behaviour such as drag and drop is checked by hand unless an automated check is cheap and stable.
 

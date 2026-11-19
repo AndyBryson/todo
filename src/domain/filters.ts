@@ -54,3 +54,19 @@ export function toggleListFilter(
   else next.add(id);
   return next.size === 0 || next.size === allIds.length ? null : next;
 }
+
+// A newly added account's lists only arrive with its first pull, so an active list
+// filter waits for them; otherwise the account would look empty.
+export function showNewAccounts(
+  filter: ReadonlySet<string> | null,
+  waiting: ReadonlySet<string>,
+  listAccount: Readonly<Record<string, string>>,
+): { filter: Set<string> | null; waiting: Set<string> } | null {
+  const arrived = new Set(Object.values(listAccount).filter((id) => waiting.has(id)));
+  if (arrived.size === 0) return null;
+  const listIds = Object.keys(listAccount).filter((id) => arrived.has(listAccount[id] ?? ''));
+  return {
+    filter: filter ? new Set([...filter, ...listIds]) : null,
+    waiting: new Set([...waiting].filter((id) => !arrived.has(id))),
+  };
+}

@@ -168,3 +168,37 @@ test("quick add falls back when the last list's account is gone", async () => {
     listId: 'L1',
   });
 });
+
+test("an upgraded device's quick add starts from the list it last used", async () => {
+  const storage = memoryStorage();
+  const { set } = await harness({
+    records: [record('a', 'me@example.com'), record('b', 'shared@example.com')],
+    storage,
+    googles: {
+      a: createFakeGoogle({
+        lists: [
+          { id: 'L1', title: 'Mine' },
+          { id: 'L2', title: 'Errands' },
+        ],
+      }),
+      b: createFakeGoogle({
+        lists: [{ id: 'T1', title: 'Theirs' }],
+        account: { email: 'shared@example.com', name: 'Shared' },
+      }),
+    },
+  });
+  running = set;
+  await syncAll(set);
+  await set.get('a')?.store.setMeta({ lastListId: 'L2' });
+
+  const ws = createWorkspace(set, storage);
+  expect(ws.lastListId()).toBe('L2');
+  expect(JSON.parse(storage.getItem('todo.lastList') ?? 'null')).toEqual({
+    accountId: 'a',
+    listId: 'L2',
+  });
+
+  // Only once: a list chosen since then is not overwritten by the old one.
+  storage.setItem('todo.lastList', JSON.stringify({ accountId: 'b', listId: 'T1' }));
+  expect(createWorkspace(set, storage).lastListId()).toBe('T1');
+});

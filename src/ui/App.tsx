@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type AccountSet, DUPLICATE_NOTICE } from '../accounts/set';
 import type { Workspace } from '../accounts/workspace';
-import { activeFilterCount, type BoardFilters, DEFAULT_FILTERS } from '../domain/filters';
+import {
+  activeFilterCount,
+  type BoardFilters,
+  DEFAULT_FILTERS,
+  showNewAccounts,
+} from '../domain/filters';
 import { PRIORITIES, type Priority } from '../domain/types';
 import { OfflineError } from '../google/api';
 import { PendingMoveError } from '../sync/lists';
@@ -119,6 +124,7 @@ export function App({ accounts, workspace }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [newAccounts, setNewAccounts] = useState<ReadonlySet<string>>(new Set());
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -174,6 +180,16 @@ export function App({ accounts, workspace }: Props) {
     const kept = new Set([...filter].filter((id) => ids.has(id)));
     return kept.size > 0 ? kept : null;
   }, [filter, merged.lists]);
+
+  useEffect(() => {
+    const next = showNewAccounts(filter, newAccounts, merged.listAccount);
+    if (!next) return;
+    setNewAccounts(next.waiting);
+    if (next.filter) {
+      setFilter(next.filter);
+      saveFilter(next.filter);
+    }
+  }, [filter, newAccounts, merged.listAccount]);
 
   const filters = useMemo<BoardFilters>(
     () => ({ lists: effectiveFilter, priorities, planned }),
@@ -251,7 +267,13 @@ export function App({ accounts, workspace }: Props) {
 
   async function addAccount() {
     try {
-      if ((await accounts.add()) === 'duplicate') showError('That account is already signed in.');
+      const before = new Set(accounts.all().map((a) => a.record.id));
+      if ((await accounts.add()) === 'duplicate') {
+        showError('That account is already signed in.');
+        return;
+      }
+      const added = accounts.all().filter((a) => !before.has(a.record.id));
+      setNewAccounts((was) => new Set([...was, ...added.map((a) => a.record.id)]));
     } catch (e) {
       showError(e);
     }

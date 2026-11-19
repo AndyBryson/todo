@@ -78,11 +78,8 @@ export function Header({
         </nav>
         <div class="status">
           <div class="status-text" aria-live="polite">
-            {signIn.length === 0 && (
-              <span class={status.kind === 'error' ? 'error' : undefined}>
-                {statusText(status)}
-              </span>
-            )}
+            {/* Shown beside any sign-in buttons, so another account's error isn't hidden. */}
+            <span class={status.kind === 'error' ? 'error' : undefined}>{statusText(status)}</span>
             {queueLength > 0 && (
               <span class="queue">
                 {queueLength} {queueLength === 1 ? 'change' : 'changes'} waiting

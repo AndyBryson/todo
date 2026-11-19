@@ -32,8 +32,22 @@ export interface Workspace {
 
 const LAST_LIST_KEY = 'todo.lastList';
 
+// Before accounts, the last-used list lived in the one store's meta, which is now the first account's.
+function carryLastList(set: AccountSet, storage: KeyValue): void {
+  try {
+    if (storage.getItem(LAST_LIST_KEY) !== null) return;
+    const first = set.all()[0];
+    const listId = first?.store.snapshot().lastListId;
+    if (!first || !listId) return;
+    storage.setItem(LAST_LIST_KEY, JSON.stringify({ accountId: first.record.id, listId }));
+  } catch {
+    // Without storage the next quick add just starts from the first list.
+  }
+}
+
 export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
   let cache: { views: AccountView[]; merged: Merged } | null = null;
+  carryLastList(set, storage);
 
   // Rebuilt only when a snapshot or the active set changed, so callers can compare by identity.
   function merged(): Merged {
