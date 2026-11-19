@@ -1,8 +1,9 @@
 import {
   ACCOUNT_FILE,
+  type AccountName,
   newerName,
   parseAccountFile,
-  serialiseAccountFile,
+  serialiseAccountFile as serialise,
 } from '../domain/account-name';
 import type { GoogleApi } from '../google/api';
 import type { Store } from '../store/db';
@@ -15,12 +16,17 @@ export async function syncAccountName(google: GoogleApi, store: Store): Promise<
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     const { raw, version } = await google.readAppFile(ACCOUNT_FILE);
     const remote = parseAccountFile(raw);
-    const local = store.snapshot().accountName;
-    const merged = newerName(local, remote);
-    if (!merged) return;
-    if (merged !== local) await store.commit({ meta: { accountName: merged } });
-    if (remote && serialiseAccountFile(merged) === serialiseAccountFile(remote)) return;
-    if ((await google.writeAppFile(ACCOUNT_FILE, serialiseAccountFile(merged), version)) === 'ok') {
+    // Decided inside the commit, so a rename still in flight is never overwritten by an older remote name.
+    let merged: AccountName | null = null;
+    await store.commit((cur) => {
+      merged = newerName(cur.accountName, remote);
+      const same = cur.accountName && merged && serialise(cur.accountName) === serialise(merged);
+      return merged && !same ? { meta: { accountName: merged } } : {};
+    });
+    const stored = merged as AccountName | null;
+    if (!stored) return;
+    if (remote && serialise(stored) === serialise(remote)) return;
+    if ((await google.writeAppFile(ACCOUNT_FILE, serialise(stored), version)) === 'ok') {
       return;
     }
   }

@@ -68,3 +68,14 @@ test('with no name on either side nothing is written', async () => {
   await syncAccountName(google, store);
   expect(writes()).toBe(0);
 });
+
+test('a write that loses a race rereads and writes the newer name', async () => {
+  const other = { name: 'Other', updatedAt: '2026-11-19T09:00:00.000Z' };
+  await renameAccount(store, 'Mine', T1);
+  google.onAfter('readAppFile', () => {
+    void google.writeAppFile(ACCOUNT_FILE, serialiseAccountFile(other), null);
+  });
+  await syncAccountName(google, store);
+  expect(await remoteName()).toEqual({ name: 'Mine', updatedAt: T1 });
+  expect(store.snapshot().accountName).toEqual({ name: 'Mine', updatedAt: T1 });
+});
