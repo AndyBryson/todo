@@ -315,6 +315,39 @@ describe('board file', () => {
   });
 });
 
+describe('named app files', () => {
+  test('readAppFile finds the named file', async () => {
+    const { google, requests } = api((url) => {
+      if (url.searchParams.get('alt') === 'media') return new Response('{"name":"A"}');
+      if (url.searchParams.get('fields') === 'version') return json({ version: '4' });
+      return json({ files: [{ id: 'F', version: '3' }] });
+    });
+    expect(await google.readAppFile('account.json')).toEqual({ raw: '{"name":"A"}', version: '4' });
+    expect(requests[0]?.url.searchParams.get('q')).toBe("name='account.json'");
+  });
+
+  test('writeAppFile creates the named file', async () => {
+    const { google, requests } = api((url) =>
+      url.pathname.startsWith('/upload/') ? json({ id: 'F', version: 1 }) : json({ files: [] }),
+    );
+    expect(await google.writeAppFile('account.json', '{"a":1}', null)).toBe('ok');
+    const create = requests.find((r) => r.init.method === 'POST');
+    expect(String(create?.init.body)).toContain(
+      '{"name":"account.json","parents":["appDataFolder"]}',
+    );
+  });
+
+  test('writeAppFile reports a conflict on a version mismatch', async () => {
+    const { google, requests } = api((url) =>
+      url.pathname.endsWith('/F')
+        ? json({ version: '9' })
+        : json({ files: [{ id: 'F', version: '9' }] }),
+    );
+    expect(await google.writeAppFile('account.json', '{}', '8')).toBe('conflict');
+    expect(requests.some((r) => r.init.method === 'PATCH' || r.init.method === 'POST')).toBe(false);
+  });
+});
+
 describe('getAccount', () => {
   test("getAccount reads Drive's user", async () => {
     const { google, requests } = api(() =>

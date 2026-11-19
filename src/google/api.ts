@@ -41,6 +41,12 @@ export interface GoogleApi {
     parent: string,
     previous: string | null,
   ): Promise<Task>;
+  readAppFile(name: string): Promise<{ raw: string | null; version: string | null }>;
+  writeAppFile(
+    name: string,
+    raw: string,
+    expectedVersion: string | null,
+  ): Promise<'ok' | 'conflict'>;
   readBoard(): Promise<{ raw: string | null; version: string | null }>;
   writeBoard(raw: string, expectedVersion: string | null): Promise<'ok' | 'conflict'>;
 }

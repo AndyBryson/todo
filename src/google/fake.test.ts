@@ -72,3 +72,22 @@ describe('fake account', () => {
     expect(await seeded.getAccount()).toEqual({ email: 'w@x.y', name: 'W' });
   });
 });
+
+describe('fake app files', () => {
+  test('files are kept apart by name', async () => {
+    const google = createFakeGoogle({ board: '{"b":1}', files: { 'account.json': '{"n":1}' } });
+    expect(await google.readAppFile('account.json')).toEqual({ raw: '{"n":1}', version: '1' });
+    expect(await google.writeAppFile('account.json', '{"n":2}', '1')).toBe('ok');
+    expect(await google.writeAppFile('account.json', '{"n":3}', '1')).toBe('conflict');
+    expect(await google.readAppFile('account.json')).toEqual({ raw: '{"n":2}', version: '2' });
+    expect(await google.readBoard()).toEqual({ raw: '{"b":1}', version: '1' });
+    expect(await google.readAppFile('other.json')).toEqual({ raw: null, version: null });
+  });
+
+  test('failOn and calls cover the new methods', async () => {
+    const google = createFakeGoogle();
+    google.failOn('readAppFile', new Error('down'));
+    await expect(google.readAppFile('account.json')).rejects.toThrow('down');
+    expect(google.calls.map((c) => c.method)).toEqual(['readAppFile']);
+  });
+});

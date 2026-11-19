@@ -117,12 +117,12 @@ export function createHttpGoogle(
     `${TASKS}/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`;
   const listUrl = (listId: string) => `${TASKS}/users/@me/lists/${encodeURIComponent(listId)}`;
 
-  async function findBoard(): Promise<DriveFile | null> {
+  async function findAppFile(name: string): Promise<DriveFile | null> {
     const query = new URLSearchParams({
       spaces: 'appDataFolder',
-      q: `name='${BOARD_NAME}'`,
+      q: `name='${name}'`,
       fields: 'files(id,version)',
-      // Every device settles on the oldest board.json if two ever exist.
+      // Every device settles on the oldest copy of a named file if two ever exist.
       orderBy: 'createdTime',
     });
     const res = await request(`${DRIVE}?${query}`);
@@ -137,7 +137,7 @@ export function createHttpGoogle(
     return String(version);
   }
 
-  return {
+  const api: GoogleApi = {
     async getAccount() {
       const res = await request(`${DRIVE_ABOUT}?fields=user(emailAddress,displayName)`);
       const { user }: { user?: { emailAddress?: string; displayName?: string } } = await res.json();
@@ -234,10 +234,10 @@ export function createHttpGoogle(
       return live(listId, await res.json());
     },
 
-    async readBoard() {
-      const file = await findBoard();
+    async readAppFile(name) {
+      const file = await findAppFile(name);
       if (!file) return { raw: null, version: null };
-      // writeBoard checks the version on the file itself, so read it the same way.
+      // writeAppFile checks the version on the file itself, so read it the same way.
       // Version first: a write landing in between then pairs newer content with an
       // older version, which only costs a retry, never an overwrite.
       const version = await fileVersion(file.id);
@@ -245,12 +245,12 @@ export function createHttpGoogle(
       return { raw: await res.text(), version };
     },
 
-    async writeBoard(raw, expectedVersion) {
-      const file = await findBoard();
+    async writeAppFile(name, raw, expectedVersion) {
+      const file = await findAppFile(name);
       if (!file) {
         if (expectedVersion !== null) return 'conflict';
         const boundary = `todo-${Math.random().toString(36).slice(2)}`;
-        const metadata = JSON.stringify({ name: BOARD_NAME, parents: ['appDataFolder'] });
+        const metadata = JSON.stringify({ name, parents: ['appDataFolder'] });
         const body =
           `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
           `--${boundary}\r\nContent-Type: application/json\r\n\r\n${raw}\r\n--${boundary}--`;
@@ -271,5 +271,14 @@ export function createHttpGoogle(
       });
       return 'ok';
     },
+
+    readBoard() {
+      return api.readAppFile(BOARD_NAME);
+    },
+
+    writeBoard(raw, expectedVersion) {
+      return api.writeAppFile(BOARD_NAME, raw, expectedVersion);
+    },
   };
+  return api;
 }

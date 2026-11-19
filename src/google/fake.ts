@@ -24,6 +24,8 @@ export function createFakeGoogle(seed?: {
   lists?: TaskList[];
   tasks?: Task[];
   board?: string;
+  // Other app data files by name, such as account.json.
+  files?: Record<string, string>;
   // Defaults to the first seeded list, as Google's My Tasks usually comes first.
   defaultListId?: string;
   // Real Google spaces sibling positions widely; tests that mix local and Google
@@ -40,6 +42,23 @@ export function createFakeGoogle(seed?: {
   const board = {
     raw: seed?.board ?? null,
     version: seed?.board === undefined ? 0 : 1,
+  };
+  const files = new Map<string, { raw: string | null; version: number }>([['board.json', board]]);
+  for (const [name, raw] of Object.entries(seed?.files ?? {})) files.set(name, { raw, version: 1 });
+  const readFile = (name: string) => {
+    const file = files.get(name);
+    return file?.raw == null
+      ? { raw: null, version: null }
+      : { raw: file.raw, version: String(file.version) };
+  };
+  const writeFile = (name: string, raw: string, expectedVersion: string | null) => {
+    const file = files.get(name) ?? { raw: null, version: 0 };
+    const current = file.raw === null ? null : String(file.version);
+    if (expectedVersion !== current) return 'conflict' as const;
+    file.raw = raw;
+    file.version += 1;
+    files.set(name, file);
+    return 'ok' as const;
   };
   const calls: { method: string; args: unknown[] }[] = [];
   const failures = new Map<string, Failure[]>();
@@ -252,22 +271,24 @@ export function createFakeGoogle(seed?: {
       });
     },
 
-    readBoard() {
-      return run('readBoard', [], () =>
-        board.raw === null
-          ? { raw: null, version: null }
-          : { raw: board.raw, version: String(board.version) },
+    readAppFile(name) {
+      return run('readAppFile', [name], () => readFile(name));
+    },
+
+    writeAppFile(name, raw, expectedVersion) {
+      return run('writeAppFile', [name, raw, expectedVersion], () =>
+        writeFile(name, raw, expectedVersion),
       );
     },
 
+    readBoard() {
+      return run('readBoard', [], () => readFile('board.json'));
+    },
+
     writeBoard(raw, expectedVersion) {
-      return run('writeBoard', [raw, expectedVersion], () => {
-        const current = board.raw === null ? null : String(board.version);
-        if (expectedVersion !== current) return 'conflict' as const;
-        board.raw = raw;
-        board.version += 1;
-        return 'ok' as const;
-      });
+      return run('writeBoard', [raw, expectedVersion], () =>
+        writeFile('board.json', raw, expectedVersion),
+      );
     },
   };
 }
