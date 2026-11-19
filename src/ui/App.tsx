@@ -13,15 +13,9 @@ import { PendingMoveError } from '../sync/lists';
 import { Board } from './Board';
 import { CardDetail, closeDetail, type DetailView } from './CardDetail';
 import { Header } from './Header';
-import {
-  type AccountGroup,
-  accountLabel,
-  useAccounts,
-  useIsPhone,
-  useMerged,
-  useStatus,
-} from './hooks';
+import { type AccountGroup, useAccounts, useIsPhone, useMerged, useStatus } from './hooks';
 import { PhoneNav } from './PhoneNav';
+import { Settings } from './Settings';
 import { Sidebar, SidebarDrawer } from './Sidebar';
 import { Today } from './Today';
 
@@ -98,8 +92,11 @@ function save(key: string, value: unknown) {
   }
 }
 
-function readRoute(): { view: DetailView; taskId: string | null } {
+type View = DetailView | 'settings';
+
+function readRoute(): { view: View; taskId: string | null } {
   const [, view, kind, id] = location.hash.split('/');
+  if (view === 'settings') return { view, taskId: null };
   return {
     view: view === 'today' ? 'today' : 'board',
     taskId: kind === 'task' && id ? decodeURIComponent(id) : null,
@@ -114,7 +111,7 @@ interface Props {
 export function App({ accounts, workspace }: Props) {
   const merged = useMerged(workspace);
   const all = useAccounts(accounts);
-  const { status, signIn: signInLabels } = useStatus(accounts);
+  const { status, signIn: signInLabels } = useStatus(accounts, workspace.accountLabel);
   const phone = useIsPhone();
   const [{ view, taskId }, setRoute] = useState(readRoute);
   const [filter, setFilter] = useState(loadFilter);
@@ -202,10 +199,10 @@ export function App({ accounts, workspace }: Props) {
         .filter((a) => !a.record.signedOut)
         .map((a) => ({
           id: a.record.id,
-          label: accountLabel(a),
+          label: workspace.accountLabel(a.record.id),
           lists: merged.lists.filter((l) => merged.listAccount[l.id] === a.record.id),
         })),
-    [all, merged],
+    [all, merged, workspace],
   );
 
   function changeFilters(next: BoardFilters) {
@@ -301,13 +298,9 @@ export function App({ accounts, workspace }: Props) {
   const sidebarProps = {
     accounts: all.map((a) => ({
       id: a.record.id,
-      label: accountLabel(a),
+      label: workspace.accountLabel(a.record.id),
       email: a.record.email,
-      refused: merged.notices.some(
-        (n) => n.accountId === a.record.id && n.text === DUPLICATE_NOTICE,
-      ),
       signedOut: a.record.signedOut,
-      needsSignIn: a.record.signedOut || a.engine.status().kind === 'signin',
       defaultListId: a.store.snapshot().defaultListId,
       lists: groups.find((g) => g.id === a.record.id)?.lists ?? [],
     })),
@@ -337,10 +330,6 @@ export function App({ accounts, workspace }: Props) {
           saveFilter(kept);
         }
       }),
-    onSignIn: (id: string) => void signIn(id),
-    onSignOut: (id: string) => void accounts.signOut(id).catch(showError),
-    onRemove: (id: string) => void removeAccount(id),
-    onAddAccount: () => void addAccount(),
     filters,
     onFilters: changeFilters,
     selecting,
@@ -353,7 +342,14 @@ export function App({ accounts, workspace }: Props) {
     signInLabels.length > 0
       ? all
           .filter((a) => !a.record.signedOut && a.engine.status().kind === 'signin')
-          .map((a) => ({ id: a.record.id, label: a.record.label ?? a.record.email }))
+          .map((a) => ({
+            id: a.record.id,
+            // Plain "Sign in" until the account has a name or an email to show.
+            label:
+              (a.record.label ?? a.record.email) === null
+                ? null
+                : workspace.accountLabel(a.record.id),
+          }))
       : [];
 
   const addTask = (input: { listId: string; title: string; pinned: boolean }) =>
@@ -370,16 +366,42 @@ export function App({ accounts, workspace }: Props) {
         route={view}
         onSignIn={(id) => void signIn(id)}
         onDismiss={(accountId, id) => void workspace.dismissNotice(accountId, id)}
-        menu={{
-          filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
-          expanded: phone ? drawerOpen : sidebarOpen,
-          onClick: phone ? () => setDrawerOpen(true) : toggleSidebar,
-        }}
+        menu={
+          view === 'settings'
+            ? undefined
+            : {
+                filtersOn: (filters.lists ? 1 : 0) + activeFilterCount(filters),
+                expanded: phone ? drawerOpen : sidebarOpen,
+                onClick: phone ? () => setDrawerOpen(true) : toggleSidebar,
+              }
+        }
       />
-      <div class={phone ? undefined : 'with-sidebar'}>
-        {!phone && sidebarOpen && <Sidebar {...sidebarProps} />}
+      <div class={phone || view === 'settings' ? undefined : 'with-sidebar'}>
+        {!phone && sidebarOpen && view !== 'settings' && <Sidebar {...sidebarProps} />}
         <main class="main">
-          {view === 'today' ? (
+          {view === 'settings' ? (
+            <Settings
+              set={accounts}
+              accounts={all.map((a) => ({
+                id: a.record.id,
+                label: workspace.accountLabel(a.record.id),
+                googleName: a.record.label ?? a.record.email,
+                email: a.record.email,
+                signedOut: a.record.signedOut,
+                needsSignIn: a.record.signedOut || a.engine.status().kind === 'signin',
+                refused: merged.notices.some(
+                  (n) => n.accountId === a.record.id && n.text === DUPLICATE_NOTICE,
+                ),
+              }))}
+              onRename={(id, name) =>
+                void act(() => workspace.renameAccount(id, name, new Date().toISOString()))
+              }
+              onSignIn={(id) => void signIn(id)}
+              onSignOut={(id) => void accounts.signOut(id).catch(showError)}
+              onRemove={(id) => void removeAccount(id)}
+              onAddAccount={() => void addAccount()}
+            />
+          ) : view === 'today' ? (
             <Today
               workspace={workspace}
               merged={merged}
@@ -415,7 +437,7 @@ export function App({ accounts, workspace }: Props) {
           onAdd={addTask}
         />
       )}
-      {taskId && (
+      {taskId && view !== 'settings' && (
         <CardDetail
           key={taskId}
           error={actionError}

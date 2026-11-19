@@ -1079,27 +1079,27 @@ textarea:hover {
 .account-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
-.sidebar-account .account-actions button {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
+.settings-account .account-actions button {
+  padding: 0.4rem 0.9rem;
   color: var(--accent);
   background: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
 
-.sidebar-account .account-actions .primary {
+.settings-account .account-actions .primary {
   font-weight: 600;
   color: var(--accent-text);
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.sidebar-account .account-actions .danger {
+.settings-account .account-actions .danger {
   color: var(--error);
+  border-color: var(--error);
 }
 
 .account-hint {
@@ -1123,4 +1123,138 @@ textarea:hover {
 
 .selection-move select {
   max-width: 40vw;
+}
+
+.gear {
+  flex: none;
+  padding: 0.3rem 0.6rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--topbar-text);
+  text-decoration: none;
+  border-radius: 999px;
+}
+
+.gear:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.gear[aria-current="page"] {
+  color: var(--topbar);
+  background: var(--topbar-text);
+}
+
+/* The bottom bar holds Board and Today on the phone; the gear goes to the top right. */
+@media (max-width: 700px) {
+  .gear {
+    order: 1;
+    margin-left: auto;
+  }
+}
+
+.settings {
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.settings h1 {
+  margin: 0.5rem 0 0;
+  font-size: 1.4rem;
+}
+
+.settings h2 {
+  margin: 1.5rem 0 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-account {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-1);
+}
+
+.settings-account > :not(.account-actions) {
+  grid-column: 1;
+}
+
+.settings-account .account-actions {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  justify-content: flex-end;
+}
+
+.settings-account-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.6rem;
+  min-width: 0;
+}
+
+.settings-label {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.settings-email,
+.settings-status {
+  font-size: 0.875rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-status {
+  margin: 0;
+}
+
+.account-name-field {
+  flex: 1;
+  min-width: 0;
+  max-width: 20rem;
+}
+
+.settings .add-account {
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius-card);
+}
+
+.settings .add-account:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .settings-account {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-account .account-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: 0.4rem;
+  }
 }

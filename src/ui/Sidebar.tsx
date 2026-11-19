@@ -3,16 +3,14 @@ import { listColour, openTaskCount } from '../domain/board';
 import { type BoardFilters, toggleListFilter } from '../domain/filters';
 import type { Task, TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
+import { useOnline } from './hooks';
 import { ListMenu } from './ListMenu';
 
 export interface SidebarAccount {
   id: string;
   label: string;
   email: string | null;
-  // Turned away as a second copy of an account already signed in.
-  refused: boolean;
   signedOut: boolean;
-  needsSignIn: boolean;
   // Google's My Tasks, which can't be deleted.
   defaultListId: string | null;
   lists: TaskList[];
@@ -32,24 +30,6 @@ interface Props {
   onCreateList(accountId: string, title: string): Promise<boolean>;
   onRenameList(id: string, title: string): Promise<boolean>;
   onDeleteList(id: string): Promise<boolean>;
-  onSignIn(accountId: string): void;
-  onSignOut(accountId: string): void;
-  onRemove(accountId: string): void;
-  onAddAccount(): void;
-}
-
-function useOnline(): boolean {
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    addEventListener('online', update);
-    addEventListener('offline', update);
-    return () => {
-      removeEventListener('online', update);
-      removeEventListener('offline', update);
-    };
-  }, []);
-  return online;
 }
 
 // Enter or leaving the field saves; Escape cancels (null).
@@ -115,10 +95,6 @@ export function Sidebar({
   onCreateList,
   onRenameList,
   onDeleteList,
-  onSignIn,
-  onSignOut,
-  onRemove,
-  onAddAccount,
 }: Props) {
   const online = useOnline();
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -224,35 +200,8 @@ export function Sidebar({
               </li>
             </ul>
           )}
-          {account.needsSignIn && account.refused && (
-            <p class="account-hint">Sign in with a different Google account, or remove this one.</p>
-          )}
-          <div class="account-actions">
-            {account.needsSignIn && (
-              <button type="button" class="primary" onClick={() => onSignIn(account.id)}>
-                Sign in
-              </button>
-            )}
-            {!account.signedOut && (
-              <button type="button" onClick={() => onSignOut(account.id)}>
-                Sign out
-              </button>
-            )}
-            <button type="button" class="danger" onClick={() => onRemove(account.id)}>
-              Remove
-            </button>
-          </div>
         </section>
       ))}
-      <button
-        type="button"
-        class="add-account"
-        disabled={!online}
-        title={offline}
-        onClick={onAddAccount}
-      >
-        Add account
-      </button>
       <FilterMenu filters={filters} onFilters={onFilters} />
       {showSelect && (
         <button type="button" aria-pressed={selecting} onClick={onToggleSelect}>

@@ -3,7 +3,7 @@ import type { TaskList } from '../domain/types';
 import { QuickAdd } from './QuickAdd';
 
 interface Props {
-  route: 'board' | 'today';
+  route: 'board' | 'today' | 'settings';
   lists: TaskList[];
   listName: Record<string, string>;
   defaultListId: string | null;

@@ -13,14 +13,15 @@ interface Props {
   route: string;
   onSignIn(accountId: string): void;
   onDismiss(accountId: string, id: string): void;
-  // The board's lists-and-filters button; absent on Today.
+  // The lists-and-filters button; absent on Settings.
   menu?: { filtersOn: number; expanded: boolean; onClick(): void };
 }
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-function statusText(status: SyncStatus): string {
+// Also used for each account's row on the settings page.
+export function statusText(status: SyncStatus): string {
   switch (status.kind) {
     case 'synced':
       return `Synced ${time(status.at)}`;
@@ -76,6 +77,15 @@ export function Header({
             Today
           </a>
         </nav>
+        {/* Outside the nav, which the phone hides in favour of its bottom bar. */}
+        <a
+          href="#/settings"
+          class="gear"
+          aria-label="Settings"
+          aria-current={route === 'settings' ? 'page' : undefined}
+        >
+          ⚙
+        </a>
         <div class="status">
           <div class="status-text" aria-live="polite">
             {/* Shown beside any sign-in buttons, so another account's error isn't hidden. */}

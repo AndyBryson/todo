@@ -5,8 +5,6 @@ import { combineStatus, type Merged } from '../domain/merge';
 import type { TaskList } from '../domain/types';
 import type { SyncStatus } from '../sync/engine';
 
-export const accountLabel = (a: Account) => a.record.label ?? a.record.email ?? 'Account';
-
 export function useMerged(ws: Workspace): Merged {
   return useSyncExternalStore(ws.subscribe, ws.merged);
 }
@@ -16,13 +14,19 @@ export function useAccounts(set: AccountSet): Account[] {
 }
 
 // useSyncExternalStore needs the same object back while nothing changed.
-export function useStatus(set: AccountSet): ReturnType<typeof combineStatus> {
+export function useStatus(
+  set: AccountSet,
+  label: (accountId: string) => string,
+): ReturnType<typeof combineStatus> {
   const cache = useRef<{
     views: { label: string; status: SyncStatus }[];
     result: ReturnType<typeof combineStatus>;
   } | null>(null);
   const read = () => {
-    const views = set.active().map((a) => ({ label: accountLabel(a), status: a.engine.status() }));
+    const views = set.active().map((a) => ({
+      label: label(a.record.id),
+      status: a.engine.status(),
+    }));
     const was = cache.current;
     const same =
       was?.views.length === views.length &&
@@ -52,4 +56,18 @@ export interface AccountGroup {
   id: string;
   label: string;
   lists: TaskList[];
+}
+
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    addEventListener('online', update);
+    addEventListener('offline', update);
+    return () => {
+      removeEventListener('online', update);
+      removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
 }
