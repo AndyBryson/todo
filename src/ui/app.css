@@ -827,9 +827,56 @@ textarea:hover {
 }
 
 .sidebar-lists .check {
-  padding: 0.35rem 0.5rem;
+  gap: 0.25rem;
+  padding: 0 0.5rem 0 0;
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--chip) 12%, transparent);
+}
+
+.sidebar-lists .tick {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+.sidebar-lists .list-only {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0 0.35rem 0.25rem;
+  overflow: hidden;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.sidebar-lists .list-only[aria-pressed="true"] {
+  font-weight: 700;
+}
+
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  align-self: stretch;
+}
+
+.sidebar-heading .show-all {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .sidebar .check .dot {

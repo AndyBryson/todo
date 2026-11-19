@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { openTaskCount } from '../domain/board';
-import { type BoardFilters, toggleListFilter } from '../domain/filters';
+import { type BoardFilters, showOnlyList, toggleListFilter } from '../domain/filters';
 import type { Task, TaskList } from '../domain/types';
 import { FilterMenu } from './FilterMenu';
 import { useOnline } from './hooks';
@@ -134,9 +134,24 @@ export function Sidebar({
     onFilters({ ...filters, lists: toggleListFilter(filters.lists, id, allListIds) });
   }
 
+  function showOnly(id: string) {
+    onFilters({ ...filters, lists: showOnlyList(filters.lists, id, allListIds) });
+  }
+
   return (
     <aside class="sidebar">
-      <h2>Lists</h2>
+      <div class="sidebar-heading">
+        <h2>Lists</h2>
+        {filters.lists && (
+          <button
+            type="button"
+            class="show-all"
+            onClick={() => onFilters({ ...filters, lists: null })}
+          >
+            Show all
+          </button>
+        )}
+      </div>
       {accounts.map((account) => (
         <section class="sidebar-account" key={account.id} aria-label={account.label}>
           <h3 title={account.email ?? undefined}>{account.label}</h3>
@@ -174,15 +189,30 @@ export function Sidebar({
                       onDone={(value) => rename(list, value)}
                     />
                   ) : (
-                    <label class="check">
-                      <input
-                        type="checkbox"
-                        checked={filters.lists?.has(list.id) ?? true}
-                        onChange={() => toggleList(list.id)}
-                      />
+                    <div class="check">
+                      {/* The label only widens the tap target; the name beside it is a separate button. */}
+                      <label class="tick">
+                        <input
+                          type="checkbox"
+                          aria-label={list.title}
+                          checked={filters.lists?.has(list.id) ?? true}
+                          onChange={() => toggleList(list.id)}
+                        />
+                      </label>
                       <span class="dot" />
-                      {list.title}
-                    </label>
+                      <button
+                        type="button"
+                        class="list-only"
+                        aria-label={`Show only ${list.title}`}
+                        aria-pressed={
+                          !!filters.lists &&
+                          showOnlyList(filters.lists, list.id, allListIds) === null
+                        }
+                        onClick={() => showOnly(list.id)}
+                      >
+                        {list.title}
+                      </button>
+                    </div>
                   )}
                   {menu?.id === list.id && (
                     <ListMenu
