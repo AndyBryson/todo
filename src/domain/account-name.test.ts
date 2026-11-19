@@ -6,7 +6,9 @@ test('a damaged file reads as no name', () => {
     '{',
     '[]',
     '{"version":2,"name":"A","updatedAt":"t"}',
-    '{"version":1,"name":5,"updatedAt":"t"}',
+    '{"version":1,"name":5,"updatedAt":"2026-11-19T10:00:00.000Z"}',
+    '{"version":1,"name":"A","updatedAt":"t"}',
+    '{"version":1,"name":"A","updatedAt":""}',
   ]) {
     expect(parseAccountFile(raw)).toBeNull();
   }

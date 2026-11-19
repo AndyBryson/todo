@@ -6,15 +6,18 @@ export interface AccountName {
 
 export const ACCOUNT_FILE = 'account.json';
 
+// newerName compares these as strings, so a value that is not a time could beat every real rename.
+export function isTime(v: unknown): v is string {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v));
+}
+
 export function parseAccountFile(raw: string | null): AccountName | null {
   if (raw === null) return null;
   try {
     const v: unknown = JSON.parse(raw);
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
     const o = v as Record<string, unknown>;
-    if (o.version !== 1 || typeof o.name !== 'string' || typeof o.updatedAt !== 'string') {
-      return null;
-    }
+    if (o.version !== 1 || typeof o.name !== 'string' || !isTime(o.updatedAt)) return null;
     return { name: o.name, updatedAt: o.updatedAt };
   } catch {
     return null;

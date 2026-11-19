@@ -57,6 +57,19 @@ test('an unexpected failure shows its message', async () => {
   expect(engine.status()).toEqual({ kind: 'error', message: 'boom' });
 });
 
+test('a failed name sync still counts as synced so the next cycle can retry it', async () => {
+  google.failOn('readAppFile', new HttpError(500, 'Backend Error'));
+  await engine.syncNow();
+  expect(engine.status()).toEqual({ kind: 'synced', at: NOW.toISOString() });
+  expect(store.snapshot().lastSyncedAt).toBe(NOW.toISOString());
+});
+
+test('signing out during the name sync still asks to sign in', async () => {
+  google.failOn('readAppFile', new AuthError());
+  await engine.syncNow();
+  expect(engine.status()).toEqual({ kind: 'signin' });
+});
+
 test('two syncs at once never replay concurrently', async () => {
   await addTask(store, { listId: 'L1', title: 'New', pinned: false }, NOW.toISOString());
   await Promise.all([engine.syncNow(), engine.syncNow()]);

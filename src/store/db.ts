@@ -6,7 +6,7 @@ import {
   openDB,
   type StoreNames,
 } from 'idb';
-import type { AccountName } from '../domain/account-name';
+import { type AccountName, isTime } from '../domain/account-name';
 import type { BoardEntries, Task, TaskList } from '../domain/types';
 import type { NewTask, TaskPatch } from '../google/api';
 
@@ -182,12 +182,13 @@ function parseHidden(raw: string | null | undefined): Record<string, string> {
   }
 }
 
+// No version field: meta never leaves this device, so unlike account.json no other build has to read it.
 function parseAccountName(raw: string | null | undefined): AccountName | null {
   try {
     const v: unknown = JSON.parse(raw ?? '');
     if (v === null || typeof v !== 'object') return null;
     const o = v as Record<string, unknown>;
-    return typeof o.name === 'string' && typeof o.updatedAt === 'string'
+    return typeof o.name === 'string' && isTime(o.updatedAt)
       ? { name: o.name, updatedAt: o.updatedAt }
       : null;
   } catch {

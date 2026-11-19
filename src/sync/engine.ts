@@ -66,7 +66,12 @@ export function createSyncEngine(
         again = true;
         return;
       }
-      await syncAccountName(google, store);
+      try {
+        await syncAccountName(google, store);
+      } catch (error) {
+        // The name is extra; a Drive hiccup on it must not hide that the tasks synced. The next cycle retries.
+        if (error instanceof AuthError || error instanceof OfflineError) throw error;
+      }
       const at = now.toISOString();
       await store.setMeta({ lastSyncedAt: at });
       setStatus({ kind: 'synced', at });

@@ -270,7 +270,7 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
       const a = set.get(accountId);
       if (!a) throw new Error(`Unknown account ${accountId}`);
       await edits.renameAccount(a.store, name, now);
-      for (const x of set.active()) x.engine.requestSync();
+      if (!a.record.signedOut) a.engine.requestSync();
     },
 
     requestSync() {

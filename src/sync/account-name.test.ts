@@ -79,3 +79,19 @@ test('a write that loses a race rereads and writes the newer name', async () => 
   expect(await remoteName()).toEqual({ name: 'Mine', updatedAt: T1 });
   expect(store.snapshot().accountName).toEqual({ name: 'Mine', updatedAt: T1 });
 });
+
+test('a rename made while the file is read is kept and written', async () => {
+  const later = { name: 'Later', updatedAt: T2 };
+  google = createFakeGoogle({
+    files: { [ACCOUNT_FILE]: serialiseAccountFile({ name: 'Remote', updatedAt: T1 }) },
+  });
+  await renameAccount(store, 'Mine', '2026-11-19T09:00:00.000Z');
+  google.onAfter('readAppFile', () => {
+    void renameAccount(store, later.name, later.updatedAt);
+  });
+  await syncAccountName(google, store);
+  expect(store.snapshot().accountName).toEqual(later);
+  await syncAccountName(google, store);
+  expect(await remoteName()).toEqual(later);
+  expect(store.snapshot().accountName).toEqual(later);
+});
