@@ -33,3 +33,11 @@ export function newerName(
   if (!local || !remote) return local ?? remote;
   return local.updatedAt > remote.updatedAt ? local : remote;
 }
+
+// Every screen takes its account name from here, so a rename shows up everywhere at once.
+export function accountLabel(
+  record: { label: string | null; email: string | null },
+  saved: AccountName | null,
+): string {
+  return (saved?.name ? saved.name : null) ?? record.label ?? record.email ?? 'Account';
+}

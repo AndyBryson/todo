@@ -202,3 +202,26 @@ test("an upgraded device's quick add starts from the list it last used", async (
   storage.setItem('todo.lastList', JSON.stringify({ accountId: 'b', listId: 'T1' }));
   expect(createWorkspace(set, storage).lastListId()).toBe('T1');
 });
+
+test('renaming changes the merged label and the clash suffix', async () => {
+  const { ws } = await twoAccounts({
+    mine: createFakeGoogle({
+      lists: [{ id: 'L0', title: 'My Tasks' }],
+      account: { email: 'me@example.com', name: 'Me' },
+    }),
+  });
+  let notified = 0;
+  ws.subscribe(() => notified++);
+  expect(ws.merged().listName.L0).toBe('My Tasks · me@example.com');
+  await ws.renameAccount('b', 'Home', NOW);
+  expect(ws.accountLabel('b')).toBe('Home');
+  expect(ws.merged().listName.T0).toBe('My Tasks · Home');
+  expect(notified).toBeGreaterThan(0);
+});
+
+test('a signed-out account keeps its saved name', async () => {
+  const { set, ws } = await twoAccounts();
+  await ws.renameAccount('b', 'Home', NOW);
+  await set.signOut('b');
+  expect(ws.accountLabel('b')).toBe('Home');
+});

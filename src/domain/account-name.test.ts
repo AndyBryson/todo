@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { newerName, parseAccountFile, serialiseAccountFile } from './account-name';
+import { accountLabel, newerName, parseAccountFile, serialiseAccountFile } from './account-name';
 
 test('a damaged file reads as no name', () => {
   for (const raw of [
@@ -30,4 +30,14 @@ test('newer wins and a tie goes to the remote copy', () => {
   expect(newerName(null, a)).toBe(a);
   expect(newerName(a, null)).toBe(a);
   expect(newerName(null, null)).toBeNull();
+});
+
+test('label order: saved name, then Google name, then email, then Account', () => {
+  const saved = { name: 'Home', updatedAt: 't' };
+  const rec = { label: 'Google Name', email: 'a@example.com' };
+  expect(accountLabel(rec, saved)).toBe('Home');
+  expect(accountLabel(rec, { name: '', updatedAt: 't' })).toBe('Google Name');
+  expect(accountLabel(rec, null)).toBe('Google Name');
+  expect(accountLabel({ label: null, email: 'a@example.com' }, null)).toBe('a@example.com');
+  expect(accountLabel({ label: null, email: null }, null)).toBe('Account');
 });

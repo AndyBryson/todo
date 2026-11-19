@@ -1,3 +1,4 @@
+import { accountLabel } from '../domain/account-name';
 import { type AccountView, type Merged, mergeViews } from '../domain/merge';
 import type { BoardEntries, Column, Priority, TaskList } from '../domain/types';
 import type { TaskPatch } from '../google/api';
@@ -27,6 +28,8 @@ export interface Workspace {
   renameList(listId: string, title: string): Promise<void>;
   deleteList(listId: string): Promise<void>;
   dismissNotice(accountId: string, id: string): Promise<void>;
+  accountLabel(accountId: string): string;
+  renameAccount(accountId: string, name: string, now: string): Promise<void>;
   requestSync(): void;
 }
 
@@ -53,7 +56,7 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
   function merged(): Merged {
     const views = set.active().map((a) => ({
       id: a.record.id,
-      label: a.record.label ?? a.record.email ?? 'Account',
+      label: accountLabel(a.record, a.store.snapshot().accountName),
       snapshot: a.store.snapshot(),
     }));
     const same =
@@ -256,6 +259,18 @@ export function createWorkspace(set: AccountSet, storage: KeyValue): Workspace {
 
     async dismissNotice(accountId, id) {
       await set.get(accountId)?.store.dismissNotice(id);
+    },
+
+    accountLabel(accountId) {
+      const a = set.get(accountId);
+      return a ? accountLabel(a.record, a.store.snapshot().accountName) : 'Account';
+    },
+
+    async renameAccount(accountId, name, now) {
+      const a = set.get(accountId);
+      if (!a) throw new Error(`Unknown account ${accountId}`);
+      await edits.renameAccount(a.store, name, now);
+      for (const x of set.active()) x.engine.requestSync();
     },
 
     requestSync() {
