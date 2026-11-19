@@ -314,3 +314,20 @@ describe('board file', () => {
     expect(patch?.init.body).toBe('{"b":2}');
   });
 });
+
+describe('getAccount', () => {
+  test("getAccount reads Drive's user", async () => {
+    const { google, requests } = api(() =>
+      json({ user: { emailAddress: 'a@b.c', displayName: 'A' } }),
+    );
+    expect(await google.getAccount()).toEqual({ email: 'a@b.c', name: 'A' });
+    expect(requests[0]?.url.href).toBe(
+      'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)',
+    );
+  });
+
+  test('a 401 is an AuthError', async () => {
+    const { google } = api(() => json({}, 401));
+    await expect(google.getAccount()).rejects.toBeInstanceOf(AuthError);
+  });
+});

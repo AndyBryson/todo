@@ -64,3 +64,11 @@ describe('fake subtasks', () => {
     }
   });
 });
+
+describe('fake account', () => {
+  test('defaults to me@example.com and takes a seeded account', async () => {
+    expect(await createFakeGoogle().getAccount()).toEqual({ email: 'me@example.com', name: 'Me' });
+    const seeded = createFakeGoogle({ account: { email: 'w@x.y', name: 'W' } });
+    expect(await seeded.getAccount()).toEqual({ email: 'w@x.y', name: 'W' });
+  });
+});

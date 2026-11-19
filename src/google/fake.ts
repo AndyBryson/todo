@@ -29,7 +29,9 @@ export function createFakeGoogle(seed?: {
   // Real Google spaces sibling positions widely; tests that mix local and Google
   // positions need the same, or they cannot tell the two schemes apart.
   positionSpacing?: number;
+  account?: { email: string; name: string };
 }): FakeGoogle {
+  const account = seed?.account ?? { email: 'me@example.com', name: 'Me' };
   const spacing = BigInt(seed?.positionSpacing ?? 1);
   const lists = [...(seed?.lists ?? [])];
   const defaultListId = seed?.defaultListId ?? lists[0]?.id;
@@ -89,6 +91,10 @@ export function createFakeGoogle(seed?: {
 
     onAfter(method, fn) {
       hooks.set(method, [...(hooks.get(method) ?? []), fn]);
+    },
+
+    getAccount() {
+      return run('getAccount', [], () => ({ ...account }));
     },
 
     listTaskLists() {

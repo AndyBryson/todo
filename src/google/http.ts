@@ -17,6 +17,7 @@ import {
 const TASKS = 'https://tasks.googleapis.com/tasks/v1';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+const DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about';
 const BOARD_NAME = 'board.json';
 
 interface GoogleTask {
@@ -137,6 +138,12 @@ export function createHttpGoogle(
   }
 
   return {
+    async getAccount() {
+      const res = await request(`${DRIVE_ABOUT}?fields=user(emailAddress,displayName)`);
+      const { user }: { user: { emailAddress: string; displayName?: string } } = await res.json();
+      return { email: user.emailAddress, name: user.displayName ?? '' };
+    },
+
     async listTaskLists() {
       const lists = await pages<TaskList>(`${TASKS}/users/@me/lists`, new URLSearchParams());
       return lists.map((l) => ({ id: l.id, title: l.title }));

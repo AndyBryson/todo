@@ -17,6 +17,8 @@ export type TaskPatch = Partial<{
 }>;
 
 export interface GoogleApi {
+  // Who the token belongs to, so each sign-in can be checked against the account it is for.
+  getAccount(): Promise<{ email: string; name: string }>;
   listTaskLists(): Promise<TaskList[]>;
   // The list Google Home and other Google clients add to (My Tasks).
   getDefaultListId(): Promise<string>;
