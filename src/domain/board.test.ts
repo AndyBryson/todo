@@ -143,6 +143,14 @@ describe('reconcile', () => {
     expect(Object.keys(out).sort()).toEqual(['p']);
   });
 
+  test('a placement made on purpose, however old, beats one reconcile just made', () => {
+    // A copy from another account is placed before the pull that first sees the task.
+    const reconciled = reconcile([task('x'), task('new')], LISTS, { x: entry() }, NOW, null);
+    const placed = { new: entry({ column: 'Doing', openColumn: 'Doing', updatedAt: OLD }) };
+    expect(mergeEntries(reconciled, placed).new?.column).toBe('Doing');
+    expect(mergeEntries(placed, reconciled).new?.column).toBe('Doing');
+  });
+
   test('untouched entries keep their updatedAt', () => {
     const out = reconcile([task('x')], LISTS, { x: entry({ column: 'Next' }) }, NOW, null);
     expect(out.x?.updatedAt).toBe(OLD);

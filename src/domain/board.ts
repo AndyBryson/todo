@@ -151,6 +151,10 @@ function inGoogleOrder(tasks: Task[], lists: TaskList[]): Task[] {
     );
 }
 
+// The oldest stamp there is, so any placement made on purpose (a copy from another
+// account, or a move) wins the merge over a guess made here.
+const AUTOMATIC = '1970-01-01T00:00:00.000Z';
+
 export function reconcile(
   tasks: Task[],
   lists: TaskList[],
@@ -178,9 +182,9 @@ export function reconcile(
         rank: appendRank(ranksIn(result, column)),
         pinned: false,
         openColumn: column,
-        updatedAt: now,
+        updatedAt: AUTOMATIC,
       };
-      result[t.id] = t.completed ? completeEntry(fresh, now) : fresh;
+      result[t.id] = t.completed ? { ...completeEntry(fresh, now), updatedAt: AUTOMATIC } : fresh;
     } else if (t.completed && existing.column !== 'Done') {
       result[t.id] = completeEntry(existing, now);
     } else if (!t.completed && existing.column === 'Done') {
