@@ -8,13 +8,37 @@ import {
 import type { BoardEntries, Task, TaskList } from '../domain/types';
 import type { NewTask, TaskPatch } from '../google/api';
 
+// What the original looked like when it was copied to another account, so the delete
+// that finishes the move can tell whether it was edited elsewhere in the meantime.
+export interface Fingerprint {
+  updated: string;
+  // Step ID to the step's `updated`.
+  steps: Record<string, string>;
+}
+
 export type Op =
   // attemptedAt is set before the first insert, so a replay after a lost response can find the task it made.
   | { kind: 'create'; listId: string; tempId: string; task: NewTask; attemptedAt?: string }
   | { kind: 'patch'; listId: string; taskId: string; set: TaskPatch; base: TaskPatch }
   | { kind: 'delete'; listId: string; taskId: string }
   | { kind: 'move'; listId: string; taskId: string; toListId: string }
-  | { kind: 'reorder'; listId: string; taskId: string; parent: string; previous: string | null };
+  | { kind: 'reorder'; listId: string; taskId: string; parent: string; previous: string | null }
+  // Queued in the target account after the copy's creates. taskId is the copy's.
+  | {
+      kind: 'handoff';
+      listId: string;
+      taskId: string;
+      source: { accountId: string; listId: string; taskId: string; title: string };
+      fingerprint: Fingerprint;
+    }
+  // Queued in the source account once the copy exists. taskId is the original's.
+  | {
+      kind: 'transferDelete';
+      listId: string;
+      taskId: string;
+      title: string;
+      fingerprint: Fingerprint;
+    };
 
 export interface QueuedOp {
   seq: number;
@@ -40,6 +64,8 @@ export interface Snapshot {
   // Old temporary ID to real ID, for this session only: an open screen or a late
   // edit can still hold the temporary ID after a replay has renamed the task.
   renamed: Record<string, string>;
+  // Source task ID to target account ID, for originals whose move is still under way.
+  hidden: Record<string, string>;
 }
 
 // One edit's worth of changes. Applied together or not at all.
@@ -133,7 +159,18 @@ interface Schema extends DBSchema {
 
 type Db = IDBPDatabase<Schema>;
 type Tx = IDBPTransaction<Schema, StoreNames<Schema>[], 'readwrite'>;
-export type Meta = Pick<Snapshot, 'lastSyncedAt' | 'lastListId' | 'defaultListId'>;
+export type Meta = Pick<Snapshot, 'lastSyncedAt' | 'lastListId' | 'defaultListId' | 'hidden'>;
+
+function parseHidden(raw: string | null | undefined): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(raw ?? '');
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 const STORES: StoreNames<Schema>[] = ['lists', 'tasks', 'entries', 'queue', 'notices', 'meta'];
 
@@ -191,6 +228,7 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
       lastSyncedAt: (await db.get('meta', 'lastSyncedAt')) ?? null,
       lastListId: (await db.get('meta', 'lastListId')) ?? null,
       defaultListId: (await db.get('meta', 'defaultListId')) ?? null,
+      hidden: parseHidden(await db.get('meta', 'hidden')),
     },
     renamed: {},
   };
@@ -351,7 +389,9 @@ export async function openStore(name = 'todo', onClosed?: () => void): Promise<S
           ...notices.map((n) => tx.objectStore('notices').put(n)),
           ...[...removeNotices].map((id) => tx.objectStore('notices').delete(id)),
           ...Object.entries(change.meta ?? {}).map(([k, v]) =>
-            tx.objectStore('meta').put(v as string | null, k),
+            tx
+              .objectStore('meta')
+              .put(k === 'hidden' ? JSON.stringify(v) : (v as string | null), k),
           ),
         ],
       };

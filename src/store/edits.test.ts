@@ -405,6 +405,13 @@ describe('store', () => {
     expect(calls).toBe(1);
   });
 
+  test('hidden survives reopening the store', async () => {
+    expect(store.snapshot().hidden).toEqual({});
+    await store.commit({ meta: { hidden: { t1: 'b' } } });
+    const reopened = await openStore(name);
+    expect(reopened.snapshot().hidden).toEqual({ t1: 'b' });
+  });
+
   test('a dismissed notice stays dismissed after a reopen', async () => {
     await store.commit({ notices: ['one', 'two'] });
     const [first] = store.snapshot().notices;

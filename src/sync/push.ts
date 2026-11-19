@@ -19,19 +19,31 @@ import {
 
 export type ReplayResult = 'done' | 'offline' | 'auth' | 'error';
 
+export interface ReplayHooks {
+  // Runs once every create queued before the op has reached Google.
+  handoff(op: Extract<Op, { kind: 'handoff' }>): Promise<void>;
+}
+
+// Steps completed long ago still belong to the original, so they count in its fingerprint.
+const EPOCH = '1970-01-01T00:00:00.000Z';
+
 const idOf = (op: Op) => (op.kind === 'create' ? op.tempId : op.taskId);
 
 // Users keep editing while replay runs, so every local write below is built
 // inside a commit callback from the latest state, never from a read made before
 // the Google call.
 
-export async function replay(google: GoogleApi, store: Store): Promise<ReplayResult> {
+export async function replay(
+  google: GoogleApi,
+  store: Store,
+  hooks?: ReplayHooks,
+): Promise<ReplayResult> {
   try {
     await store.commit(dropUnsentCreates);
     for (;;) {
       const head = store.snapshot().queued[0];
       if (!head) return 'done';
-      await run(google, store, head);
+      await run(google, store, head, hooks);
     }
   } catch (error) {
     if (error instanceof AuthError) return 'auth';
@@ -124,7 +136,12 @@ function siblingsBefore(
     .filter((id) => id !== self);
 }
 
-async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<void> {
+async function run(
+  google: GoogleApi,
+  store: Store,
+  head: QueuedOp,
+  hooks?: ReplayHooks,
+): Promise<void> {
   const { op, seq } = head;
   try {
     switch (op.kind) {
@@ -155,10 +172,19 @@ async function run(google: GoogleApi, store: Store, head: QueuedOp): Promise<voi
       }
       case 'reorder':
         return await runReorder(google, store, head, op);
+      case 'handoff':
+        // Without hooks (tests and fake mode) there is no other account to tell.
+        await hooks?.handoff(op);
+        await store.commit({ dequeue: [seq] });
+        return;
+      case 'transferDelete':
+        return await runTransferDelete(google, store, head, op);
       default:
         return assertNever(op);
     }
   } catch (error) {
+    // The hook's failure says nothing about the copy, so it must not be dropped as deleted.
+    if (op.kind === 'handoff') throw error;
     if (error instanceof NotFoundError) {
       // Inserting can only miss on the list, so the list is what went.
       const notice =
@@ -271,6 +297,7 @@ function dropRefused(s: Snapshot, head: QueuedOp, status: number): Change {
       : { dequeue: s.queued.some((q) => q.seq === head.seq) ? [head.seq] : [] };
   return {
     ...dropped,
+    ...(head.op.kind === 'transferDelete' && { meta: { hidden: unhide(s, head.op.taskId) } }),
     notices: [`Google refused a change to “${title}” (error ${status}), so it was dropped.`],
   };
 }
@@ -438,6 +465,60 @@ async function resolveMissingMove(
       notices: [
         `“${family.find((t) => t.id === op.taskId)?.title || stayed.title || 'A task'}” couldn't be moved because the list no longer exists.`,
       ],
+    };
+  });
+}
+
+function unhide(s: Snapshot, taskId: string): Record<string, string> {
+  const { [taskId]: _, ...rest } = s.hidden;
+  return rest;
+}
+
+// The copy already exists in the other account, so the original goes only if nobody
+// has touched it since it was copied. A duplicate is better than losing an edit.
+async function runTransferDelete(
+  google: GoogleApi,
+  store: Store,
+  head: QueuedOp,
+  op: Extract<Op, { kind: 'transferDelete' }>,
+): Promise<void> {
+  const clearUp = (extra: Change = {}) =>
+    store.commit((s) => ({
+      ...extra,
+      dequeue: [head.seq],
+      meta: { hidden: unhide(s, op.taskId) },
+    }));
+  let unchanged: boolean;
+  try {
+    const original = await google.getTask(op.listId, op.taskId);
+    const steps = (await google.listTasks(op.listId, EPOCH)).filter((t) => t.parent === op.taskId);
+    const expected = op.fingerprint.steps;
+    unchanged =
+      original.updated === op.fingerprint.updated &&
+      steps.length === Object.keys(expected).length &&
+      steps.every((t) => expected[t.id] === t.updated);
+    if (unchanged) await google.deleteTask(op.listId, op.taskId);
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) throw error;
+    // Gone already, or its list is: there is nothing left to delete.
+    await clearUp();
+    return;
+  }
+  if (!unchanged) {
+    await clearUp({
+      notices: [`“${op.title}” changed while it was being moved, so both copies are kept.`],
+    });
+    return;
+  }
+  await store.commit((s) => {
+    const family = s.tasks
+      .filter((t) => t.id === op.taskId || t.parent === op.taskId)
+      .map((t) => t.id);
+    return {
+      dequeue: [head.seq],
+      removeTasks: family,
+      removeEntries: [...new Set([op.taskId, ...family])],
+      meta: { hidden: unhide(s, op.taskId) },
     };
   });
 }

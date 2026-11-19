@@ -2,7 +2,7 @@ import { SYNC_INTERVAL_MS } from '../config';
 import { AuthError, type GoogleApi, OfflineError } from '../google/api';
 import type { Store } from '../store/db';
 import { pull } from './pull';
-import { replay } from './push';
+import { type ReplayHooks, replay } from './push';
 
 export type SyncStatus =
   | { kind: 'idle' }
@@ -27,6 +27,7 @@ export function createSyncEngine(
   google: GoogleApi,
   store: Store,
   clock: () => Date = () => new Date(),
+  hooks?: ReplayHooks,
 ): SyncEngine {
   let current: SyncStatus = { kind: 'idle' };
   const listeners = new Set<() => void>();
@@ -53,7 +54,7 @@ export function createSyncEngine(
     }
     setStatus({ kind: 'syncing' });
     try {
-      const sent = await replay(google, store);
+      const sent = await replay(google, store, hooks);
       if (sent === 'offline') return setStatus({ kind: 'offline' });
       if (sent === 'auth') return setStatus({ kind: 'signin' });
       if (sent === 'error') {

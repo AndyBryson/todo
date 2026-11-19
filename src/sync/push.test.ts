@@ -1,9 +1,9 @@
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { subtasksOf } from '../domain/subtasks';
-import { entry, task } from '../domain/test-fixtures';
+import { entry, OLD, task } from '../domain/test-fixtures';
 import { AuthError, HttpError, NotFoundError, OfflineError } from '../google/api';
 import { createFakeGoogle, type FakeGoogle, fakePosition } from '../google/fake';
-import { type Op, openStore, type Store } from '../store/db';
+import { type Fingerprint, type Op, openStore, type Store } from '../store/db';
 import {
   addSubtask,
   addTask,
@@ -13,7 +13,7 @@ import {
   moveToList,
   reorderSubtask,
 } from '../store/edits';
-import { replay } from './push';
+import { type ReplayHooks, replay } from './push';
 
 const NOW = '2026-11-17T10:00:00Z';
 const LISTS = [
@@ -533,4 +533,135 @@ test('a refused create takes its queued steps with it', async () => {
   expect(store.snapshot().notices.map((n) => n.text)).toEqual([
     'Google refused a change to “New” (error 400), so it was dropped.',
   ]);
+});
+
+describe('moves between accounts', () => {
+  const family = [
+    task('p'),
+    task('ps1', { parent: 'p', position: '1' }),
+    task('ps2', { parent: 'p', position: '2', completed: true, completedAt: OLD }),
+  ];
+  const fingerprint: Fingerprint = { updated: OLD, steps: { ps1: OLD, ps2: OLD } };
+  const transferDelete: Op = {
+    kind: 'transferDelete',
+    listId: 'L1',
+    taskId: 'p',
+    title: 'Moved',
+    fingerprint,
+  };
+
+  beforeEach(async () => {
+    for (const t of family) google.tasks.set(t.id, { ...t });
+    await store.commit({
+      putTasks: family,
+      entries: { p: entry() },
+      enqueue: [transferDelete],
+      meta: { hidden: { p: 'b', other: 'b' } },
+    });
+  });
+
+  const kept = '“Moved” changed while it was being moved, so both copies are kept.';
+
+  test('transferDelete deletes the original when nothing changed', async () => {
+    expect(await replay(google, store)).toBe('done');
+    expect(google.tasks.has('p')).toBe(false);
+    const s = store.snapshot();
+    expect(s.queued).toEqual([]);
+    expect(s.hidden).toEqual({ other: 'b' });
+    expect(s.tasks.map((t) => t.id)).toEqual(['x', 'y', 'z']);
+    expect(s.entries.p).toBeUndefined();
+    expect(s.notices).toEqual([]);
+  });
+
+  test('transferDelete keeps the original when a step changed elsewhere', async () => {
+    await google.patchTask('L1', 'ps1', { title: 'Edited' });
+    expect(await replay(google, store)).toBe('done');
+    expect(google.tasks.has('p')).toBe(true);
+    expect(google.tasks.has('ps1')).toBe(true);
+    const s = store.snapshot();
+    expect(s.queued).toEqual([]);
+    expect(s.hidden).toEqual({ other: 'b' });
+    expect(s.notices.map((n) => n.text)).toEqual([kept]);
+    expect(s.tasks.map((t) => t.id)).toContain('p');
+  });
+
+  test('transferDelete keeps the original when a step was added elsewhere', async () => {
+    google.tasks.set('ps3', task('ps3', { parent: 'p', position: '3' }));
+    expect(await replay(google, store)).toBe('done');
+    expect(google.tasks.has('p')).toBe(true);
+    expect(store.snapshot().notices.map((n) => n.text)).toEqual([kept]);
+  });
+
+  test('transferDelete keeps the original when the parent changed elsewhere', async () => {
+    await google.patchTask('L1', 'p', { notes: 'Edited' });
+    expect(await replay(google, store)).toBe('done');
+    expect(google.tasks.has('p')).toBe(true);
+    const s = store.snapshot();
+    expect(s.queued).toEqual([]);
+    expect(s.hidden).toEqual({ other: 'b' });
+    expect(s.notices.map((n) => n.text)).toEqual([kept]);
+  });
+
+  test('transferDelete on an already deleted task just clears up', async () => {
+    for (const t of family) google.tasks.delete(t.id);
+    expect(await replay(google, store)).toBe('done');
+    const s = store.snapshot();
+    expect(s.queued).toEqual([]);
+    expect(s.hidden).toEqual({ other: 'b' });
+    expect(s.notices).toEqual([]);
+  });
+
+  test('handoff calls the hook after earlier creates are sent', async () => {
+    await store.commit({ dequeue: store.snapshot().queued.map((q) => q.seq) });
+    const id = await addTask(store, { listId: 'L1', title: 'Copy', pinned: false }, NOW);
+    await store.commit({
+      enqueue: [
+        {
+          kind: 'handoff',
+          listId: 'L1',
+          taskId: id,
+          source: { accountId: 'a', listId: 'L9', taskId: 'orig', title: 'Copy' },
+          fingerprint,
+        },
+      ],
+    });
+    const seen: Op[] = [];
+    const hooks: ReplayHooks = {
+      async handoff(op) {
+        seen.push(op);
+      },
+    };
+    expect(await replay(google, store, hooks)).toBe('done');
+    const real = [...google.tasks.values()].find((t) => t.title === 'Copy') ?? task('missing');
+    expect(real.id).not.toBe(id);
+    expect(seen).toEqual([
+      {
+        kind: 'handoff',
+        listId: 'L1',
+        taskId: real.id,
+        source: { accountId: 'a', listId: 'L9', taskId: 'orig', title: 'Copy' },
+        fingerprint,
+      },
+    ]);
+    expect(store.snapshot().queued).toEqual([]);
+  });
+
+  test('a failing handoff stays queued', async () => {
+    await store.commit({ dequeue: store.snapshot().queued.map((q) => q.seq) });
+    const handoff: Op = {
+      kind: 'handoff',
+      listId: 'L1',
+      taskId: 'x',
+      source: { accountId: 'a', listId: 'L9', taskId: 'orig', title: 'x' },
+      fingerprint,
+    };
+    await store.commit({ enqueue: [handoff] });
+    const hooks: ReplayHooks = {
+      async handoff() {
+        throw new OfflineError();
+      },
+    };
+    expect(await replay(google, store, hooks)).toBe('offline');
+    expect(store.snapshot().queued.map((q) => q.op)).toEqual([handoff]);
+  });
 });
