@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import { task } from '../domain/test-fixtures';
+import { HttpError } from '../google/api';
 import { createFakeGoogle } from '../google/fake';
 import { openStore } from '../store/db';
 import { editTask } from '../store/edits';
@@ -126,4 +127,34 @@ test('signing out keeps the store and its queue but leaves the active set', asyn
   expect(auths.get('a')?.forgets).toBe(1);
   expect(loadRegistry(storage)[0]?.signedOut).toBe(true);
   expect(set.get('a')?.store.snapshot().queueLength).toBe(1);
+});
+
+test('a token whose account cannot be confirmed is never used', async () => {
+  const prefix = `test-${crypto.randomUUID()}`;
+  await seedStore(`${prefix}-todo-a`);
+  const google = createFakeGoogle({ lists: LISTS, tasks: [task('x')] });
+  google.failOn('getAccount', new HttpError(403, 'Forbidden'), { times: 2 });
+
+  const { set, auths } = await harness({
+    records: [record('a', 'me@example.com')],
+    prefix,
+    googles: { a: google },
+  });
+  running = set;
+  const a = set.get('a');
+  await a?.engine.syncNow();
+
+  expect(google.calls.every((c) => c.method === 'getAccount')).toBe(true);
+  expect(google.tasks.get('x')?.title).toBe('x');
+  expect(a?.store.snapshot().queueLength).toBe(1);
+  expect(a?.engine.status()).toEqual({
+    kind: 'error',
+    message: "Couldn't confirm which Google account this is.",
+  });
+  expect(auths.get('a')?.forgets).toBe(0);
+
+  // Checked again on the next sync, which then goes ahead.
+  await a?.engine.syncNow();
+  expect(google.tasks.get('x')?.title).toBe('Renamed offline');
+  expect(a?.engine.status().kind).toBe('synced');
 });

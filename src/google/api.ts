@@ -49,6 +49,8 @@ export interface GoogleApi {
 export class AuthError extends Error {}
 /** fetch threw, or the browser reports it is offline. */
 export class OfflineError extends Error {}
+/** The token's Google account couldn't be confirmed, so nothing may be sent with it. */
+export class AccountUnconfirmedError extends Error {}
 /** 404 or 410. */
 export class NotFoundError extends Error {}
 export class HttpError extends Error {

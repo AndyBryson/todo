@@ -1,6 +1,7 @@
 import { subtasksOf } from '../domain/subtasks';
 import type { Task } from '../domain/types';
 import {
+  AccountUnconfirmedError,
   AuthError,
   type GoogleApi,
   HttpError,
@@ -46,6 +47,8 @@ export async function replay(
       await run(google, store, head, hooks);
     }
   } catch (error) {
+    // Its message is the only clue to why nothing syncs, so the engine must show it.
+    if (error instanceof AccountUnconfirmedError) throw error;
     if (error instanceof AuthError) return 'auth';
     if (error instanceof OfflineError) return 'offline';
     return 'error';

@@ -1,4 +1,4 @@
-import { AuthError, type GoogleApi, OfflineError } from '../google/api';
+import { AccountUnconfirmedError, AuthError, type GoogleApi, OfflineError } from '../google/api';
 import type { Auth } from '../google/auth';
 import type { Op, Store } from '../store/db';
 import { createSyncEngine, type SyncEngine } from '../sync/engine';
@@ -151,9 +151,8 @@ export async function createAccountSet(deps: AccountDeps): Promise<AccountSet> {
         who = await raw.getAccount();
       } catch (error) {
         if (error instanceof AuthError || error instanceof OfflineError) throw error;
-        // Anything else is no evidence of the wrong account; the next token checks again.
-        verified = token;
-        return;
+        // Unconfirmed is treated as possibly wrong: the check runs again next sync.
+        throw new AccountUnconfirmedError("Couldn't confirm which Google account this is.");
       }
       const expected = account.record.email;
       if (expected === null) {
