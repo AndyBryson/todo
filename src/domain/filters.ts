@@ -57,7 +57,7 @@ export function toggleListFilter(
 
 // Lists can disappear after a sync or a sign-out, and a stale selection must not
 // hide every card. A selection that covers every list is the same as no filter,
-// so it reads as null and Show all does not appear with every box ticked.
+// so it reads as null.
 export function effectiveListFilter(
   filter: ReadonlySet<string> | null,
   listIds: readonly string[],

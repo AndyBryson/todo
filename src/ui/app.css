@@ -868,24 +868,6 @@ textarea:hover {
   font-weight: 700;
 }
 
-.sidebar-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  align-self: stretch;
-}
-
-.sidebar-heading .show-all {
-  min-height: 2rem;
-  padding: 0 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--accent);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
 .sidebar .check .dot {
   flex: none;
   width: 0.6rem;

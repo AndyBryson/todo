@@ -106,7 +106,6 @@ export function Sidebar({
   // The account a new list is being named for.
   const [adding, setAdding] = useState<string | null>(null);
   const offline = online ? undefined : "You're offline";
-  const aside = useRef<HTMLElement>(null);
 
   function openMenu(id: string, x: number, y: number) {
     if (online) setMenu({ id, x, y });
@@ -135,26 +134,13 @@ export function Sidebar({
     onFilters({ ...filters, lists: toggleListFilter(filters.lists, id, allListIds) });
   }
 
-  // Show all removes itself, so focus moves to the first list rather than dropping to the page.
-  function showAll() {
-    onFilters({ ...filters, lists: null });
-    aside.current?.querySelector<HTMLButtonElement>('.list-only')?.focus();
-  }
-
   function showOnly(id: string) {
     onFilters({ ...filters, lists: showOnlyList(filters.lists, id, allListIds) });
   }
 
   return (
-    <aside class="sidebar" ref={aside}>
-      <div class="sidebar-heading">
-        <h2>Lists</h2>
-        {filters.lists && (
-          <button type="button" class="show-all" onClick={showAll}>
-            Show all
-          </button>
-        )}
-      </div>
+    <aside class="sidebar">
+      <h2>Lists</h2>
       {accounts.map((account) => (
         <section class="sidebar-account" key={account.id} aria-label={account.label}>
           <h3 title={account.email ?? undefined}>{account.label}</h3>
